@@ -1,58 +1,64 @@
-import {expect,test} from '@playwright/test'
-import {readFile} from 'node:fs/promises'
-test('create, edit, preview, keyboard save, download, and restore',async ({page}) => {
-  const source = '# မြန်မာ\n\nDocumentation'
+import { test, expect } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => {
   await page.goto('/')
-  const editor = page.getByRole('textbox',{name:'Markdown source'})
-  await editor.fill(source)
-  await expect(page.getByRole('heading',{name:'မြန်မာ'})).toBeVisible()
-  await expect(page.getByRole('status')).toContainText('Saved locally')
-  await page.keyboard.press('Control+s')
-  await expect(page.getByRole('dialog')).toBeVisible()
-  const result = page.waitForEvent('download')
-  await page.getByRole('button',{name:'Download Markdown'}).click()
-  const download = await result
-  expect(download.suggestedFilename()).toBe('Untitled.md')
-  expect(await readFile((await download.path())!,'utf8')).toBe(source)
+  await page.evaluate(() => localStorage.clear())
   await page.reload()
-  await expect(page.getByRole('heading',{name:'မြန်မာ'})).toBeVisible()
-  await page.getByRole('button',{name:'New document'}).click()
-  await expect(page.getByText('Your Markdown preview will appear here.')).toBeVisible()
 })
-test('import retains bytes; malformed preview makes no image requests',async ({page}) => {
-  const source = '\ufeff# Myanmar\r\n\r\nမင်္ဂလာပါ\n\n<img src=x onerror=alert(1)>\n\n![blocked](https://example.org/a.png)\r'
-  let imageRequests = 0
-  page.on('request',request => {if (request.url().includes('example.org')) imageRequests++})
-  await page.goto('/')
-  await page.locator('input[type=file]').setInputFiles({name:'Training.markdown',mimeType:'text/markdown',buffer:Buffer.from(source)})
-  await expect(page.getByRole('heading',{name:'Training.markdown'})).toBeVisible()
-  await expect(page.getByLabel('Rendered preview').locator('img')).toHaveCount(0)
-  const result = page.waitForEvent('download')
-  await page.getByRole('button',{name:'Download',exact:true}).click()
-  expect(await readFile((await (await result).path())!,'utf8')).toBe(source)
-  expect(imageRequests).toBe(0)
+
+test('formats text with the ribbon and shows Markdown source', async ({ page }) => {
+  await page.getByTestId('tab-file').click()
+  await page.getByText('Blank document').click()
+  const editor = page.getByTestId('editor')
+  await editor.click()
+  await page.keyboard.type('Hello world')
+  await page.keyboard.press('Shift+Home')
+  await page.getByTestId('btn-bold').click()
+  await page.keyboard.press('End')
+  await page.waitForTimeout(100)
+  await page.keyboard.press('Enter')
+  await page.getByRole('option', { name: /Heading 2/ }).click()
+  await page.keyboard.type('Section')
+  await page.getByRole('tab', { name: 'View' }).click()
+  await page.getByTestId('view-source').click()
+  await expect(page.getByTestId('source')).toHaveValue('**Hello world**\n\n## Section\n')
 })
-test('editing still works when IndexedDB is denied and Drive is unavailable',async ({page,context}) => {
-  await context.addInitScript(() => {
-    Object.defineProperty(window,'indexedDB',{get(){throw new DOMException('Denied','SecurityError')}})
-  })
-  await page.goto('/')
-  await expect(page.getByRole('status')).toContainText('Local recovery unavailable')
-  await context.setOffline(true)
-  await page.getByRole('textbox',{name:'Markdown source'}).fill('# Offline work')
-  await expect(page.getByRole('heading',{name:'Offline work'})).toBeVisible()
-  await expect(page.getByRole('status')).toContainText('Offline')
+
+test('edits in source view flow back to the page', async ({ page }) => {
+  await page.getByRole('tab', { name: 'View' }).click()
+  await page.getByTestId('view-source').click()
+  await page.getByTestId('source').fill('# From source\n\n- [ ] task\n')
+  await page.getByTestId('view-print').click()
+  await expect(page.getByTestId('editor').locator('h1')).toHaveText('From source')
+  await expect(page.getByTestId('editor').locator('ul[data-type="taskList"]')).toBeVisible()
 })
-test('concurrent tab cannot overwrite the recovery workspace',async ({page,context}) => {
-  await page.goto('/')
-  await page.getByRole('textbox',{name:'Markdown source'}).fill('# Tab one')
-  await expect(page.getByRole('status')).toContainText('Saved locally')
-  const second = await context.newPage()
-  await second.goto('/')
-  await expect(second.getByRole('alert')).toContainText('active in another tab')
-  await second.getByRole('textbox',{name:'Markdown source'}).fill('# Tab two')
-  await expect(second.getByRole('heading',{name:'Tab two'})).toBeVisible()
-  await second.close()
+
+test('inserts a table and finds and replaces text', async ({ page }) => {
+  await page.getByTestId('tab-file').click()
+  await page.getByText('Blank document').click()
+  await page.getByTestId('editor').click()
+  await page.keyboard.type('cat cat dog')
+  await page.keyboard.press('Control+h')
+  await page.getByRole('textbox', { name: 'Find' }).fill('cat')
+  await expect(page.getByText('1 of 2')).toBeVisible()
+  await page.getByLabel('Replace with').fill('bird')
+  await page.getByRole('button', { name: 'Replace all' }).click()
+  await expect(page.getByTestId('editor')).toContainText('bird bird dog')
+  await page.keyboard.press('Escape')
+  await page.getByTestId('editor').click()
+  await page.getByRole('tab', { name: 'Insert' }).click()
+  await page.getByTestId('btn-table').click()
+  await page.getByRole('button', { name: '3 by 2' }).click()
+  await expect(page.getByTestId('editor').locator('table tr')).toHaveCount(2)
+  await expect(page.getByRole('tab', { name: 'Table' })).toBeVisible()
+})
+
+test('keeps the draft after a reload', async ({ page }) => {
+  await page.getByTestId('tab-file').click()
+  await page.getByText('Blank document').click()
+  await page.getByTestId('editor').click()
+  await page.keyboard.type('Remember me')
+  await page.waitForTimeout(900)
   await page.reload()
-  await expect(page.getByRole('heading',{name:'Tab one'})).toBeVisible()
+  await expect(page.getByTestId('editor')).toContainText('Remember me')
 })

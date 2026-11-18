@@ -1,125 +1,132 @@
-import type { Session } from './google'
-import { decode, supported, type Pending, type Remote } from './model'
-const api = 'https://www.googleapis.com'
-const fileFields = 'id,name,mimeType,version,trashed,capabilities(canEdit,canRename),appProperties'
-export interface Metadata {
-  id:string
-  name:string
-  mimeType:string
-  version:string
-  trashed?:boolean
-  capabilities?:{canEdit?:boolean; canRename?:boolean}
-  appProperties?:Record<string,string>
+import type { Token } from './google'
+
+const API = 'https://www.googleapis.com'
+const FIELDS = 'id,name,mimeType,version,modifiedTime,parents,webViewLink,capabilities(canEdit,canRename)'
+
+export interface DriveFile {
+  id: string
+  name: string
+  mimeType: string
+  version: string
+  modifiedTime?: string
+  parents?: string[]
+  webViewLink?: string
+  capabilities?: { canEdit?: boolean; canRename?: boolean }
 }
+export interface DriveUser { displayName: string; emailAddress: string; photoLink?: string; permissionId: string }
+
 export class DriveError extends Error {
-  constructor(public status:number, message:string) {super(message)}
+  constructor(public status: number, message: string) { super(message) }
 }
 export class ConflictError extends Error {
-  constructor() {super('Drive changed since this draft was opened or saved. Compare the versions before continuing.')}
+  constructor(public remote: DriveFile) { super('This file was changed in Google Drive after you opened it.') }
 }
-export function requireAccount(session:Session, association:{account:string}) {
-  if (association.account !== session.account) throw new Error('This destination belongs to a different Google account. Reconnect with that account or create a separate copy.')
+
+const messages: Record<number, string> = {
+  401: 'Your Google sign-in expired. Sign in again to continue.',
+  403: 'Google Drive denied access to this file.',
+  404: 'The file was not found. It may have been deleted or moved to Trash.',
+  429: 'Google Drive is busy. Try again in a moment.',
 }
-function failure(status:number) {
-  const messages:Record<number,string> = {
-    401:'Google authorization expired. Reconnect to continue.',
-    403:'Drive denied access. Check file permissions, enabled APIs, and Workspace policy.',
-    404:'Drive file was deleted, moved to Trash, or is inaccessible in this account.',
-    429:'Drive rate limit reached. Try again shortly.',
-  }
-  return new DriveError(status,messages[status] || 'Drive request failed (HTTP ' + status + '). Try again or download a local copy.')
-}
-async function request(session:Pick<Session,'token'|'expires'>, path:string, options:RequestInit = {}) {
-  const retryableRead = !options.method || options.method === 'GET'
-  for (let attempt=0; ; attempt++) {
-    if (Date.now() >= session.expires) throw failure(401)
-    let response: Response
+
+async function call(token: Token, path: string, init: RequestInit = {}): Promise<Response> {
+  if (Date.now() >= token.expires) throw new DriveError(401, messages[401])
+  const isRead = !init.method || init.method === 'GET'
+  for (let attempt = 0; ; attempt++) {
+    let res: Response
     try {
-      response = await fetch(api+path,{...options,cache:'no-store',signal:AbortSignal.timeout(20000),headers:{...options.headers,Authorization:'Bearer '+session.token}})
+      res = await fetch(API + path, { ...init, cache: 'no-store', headers: { ...init.headers, Authorization: `Bearer ${token.token}` } })
     } catch {
-      if (!retryableRead || attempt >= 2) throw new Error('Drive did not confirm the request. Check your network and retry.')
-      await new Promise(resolve => setTimeout(resolve,350*2**attempt))
+      if (!isRead || attempt >= 2) throw new DriveError(0, 'Could not reach Google Drive. Check your connection.')
+      await sleep(400 * 2 ** attempt)
       continue
     }
-    if (response.ok) return response
-    if (!retryableRead || attempt >= 2 || ![429,500,502,503,504].includes(response.status)) throw failure(response.status)
-    await new Promise(resolve => setTimeout(resolve,350*2**attempt))
+    if (res.ok) return res
+    if (isRead && attempt < 2 && [429, 500, 502, 503, 504].includes(res.status)) { await sleep(400 * 2 ** attempt); continue }
+    throw new DriveError(res.status, messages[res.status] || `Google Drive request failed (HTTP ${res.status}).`)
   }
 }
-export async function authorize(token:Omit<Session,'account'>):Promise<Session> {
-  const response = await request(token,'/drive/v3/about?fields=user(permissionId)')
-  const account: unknown = (await response.json()).user?.permissionId
-  if (typeof account !== 'string' || !account) throw new Error('Drive could not identify the authorized account. Reconnect before opening or saving files.')
-  return {...token,account}
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+const filePath = (id: string) => `/drive/v3/files/${encodeURIComponent(id)}`
+
+export const isMarkdownName = (name: string) => /\.(md|markdown|mdown|mkd|txt)$/i.test(name)
+export const withMdExtension = (name: string) => {
+  const clean = name.trim().replace(/[\\/:*?"<>|]+/g, '-') || 'Untitled'
+  return isMarkdownName(clean) ? clean : `${clean}.md`
 }
-const filePath = (id:string) => '/drive/v3/files/'+encodeURIComponent(id)
-export async function metadata(session:Session,id:string):Promise<Metadata> {
-  const response = await request(session,filePath(id)+'?supportsAllDrives=true&fields='+fileFields)
-  const meta:Metadata = await response.json()
-  if (meta.trashed) throw failure(404)
-  if (typeof meta.version !== 'string') throw new Error('Drive did not return a file version.')
-  return meta
+
+export async function whoAmI(token: Token): Promise<DriveUser> {
+  const r = await call(token, '/drive/v3/about?fields=user(displayName,emailAddress,photoLink,permissionId)')
+  const { user } = await r.json()
+  if (!user?.permissionId) throw new Error('Google Drive did not identify the signed-in account.')
+  return user
 }
-export async function openFile(session:Session,id:string) {
-  for (let i=0;i<2;i++) {
-    const before = await metadata(session,id)
-    if (!supported(before.name) || before.mimeType.startsWith('application/vnd.google-apps.')) throw new Error('Select a UTF-8 .md or .markdown file.')
-    const bytes = await request(session,filePath(id)+'?alt=media&supportsAllDrives=true')
-    const text = decode(await bytes.arrayBuffer())
-    const after = await metadata(session,id)
-    if (after.version === before.version) return {meta:after,text}
+
+export async function getFile(token: Token, id: string): Promise<DriveFile> {
+  const r = await call(token, `${filePath(id)}?supportsAllDrives=true&fields=${FIELDS}`)
+  return r.json()
+}
+
+export function decodeText(buf: ArrayBuffer): string {
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(buf)
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+}
+
+export async function readFile(token: Token, id: string): Promise<{ file: DriveFile; text: string }> {
+  const file = await getFile(token, id)
+  if (file.mimeType.startsWith('application/vnd.google-apps.')) {
+    throw new Error('That is a Google Docs/Sheets file. Choose a .md file instead.')
   }
-  throw new ConflictError()
+  const r = await call(token, `${filePath(id)}?alt=media&supportsAllDrives=true`)
+  let text: string
+  try { text = decodeText(await r.arrayBuffer()) } catch { throw new Error('This file is not UTF-8 text, so it cannot be opened as Markdown.') }
+  return { file, text }
 }
-export function associate(meta:Metadata,session:Session,rev:number,savedAt?:string):Remote {
-  return {id:meta.id,account:session.account,version:meta.version,savedRev:rev,savedAt}
+
+export async function listRecent(token: Token, limit = 25): Promise<DriveFile[]> {
+  // With the drive.file scope this only lists files the app created or the user opened with it.
+  const q = encodeURIComponent("trashed = false and mimeType != 'application/vnd.google-apps.folder'")
+  const r = await call(token, `/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=${limit}&fields=files(${FIELDS})&supportsAllDrives=true&includeItemsFromAllDrives=true`)
+  const { files } = await r.json()
+  return (files as DriveFile[] || []).filter(f => isMarkdownName(f.name) || f.mimeType === 'text/markdown')
 }
-export async function reservedId(session:Session) {
-  const response = await request(session,'/drive/v3/files/generateIds?count=1&space=drive')
-  const id: unknown = (await response.json()).ids?.[0]
-  if (typeof id !== 'string' || !id) throw new Error('Drive could not allocate a file ID.')
-  return id
-}
-export async function createFile(session:Session,pending:Pending):Promise<Metadata> {
-  requireAccount(session,pending)
-  // Each retry uses the previously persisted Google-generated file ID.
-  const boundary = 'markdown-desk-' + crypto.randomUUID()
-  const mimeType = 'text/markdown'
-  const meta = {id:pending.id,name:pending.name,mimeType,appProperties:{markdownDeskCreate:pending.id}}
-  const body = new Blob([
-    '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(meta),
-    '\r\n--'+boundary+'\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n',
-    pending.source,'\r\n--'+boundary+'--\r\n',
-  ])
-  try {
-    const result = await request(session,'/upload/drive/v3/files?uploadType=multipart&fields='+fileFields,{
-      method:'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body
-    })
-    return await result.json()
-  } catch (error) {
-    if (!(error instanceof DriveError) || error.status !== 409) throw error
-    const existing = await openFile(session,pending.id)
-    if (existing.meta.appProperties?.markdownDeskCreate !== pending.id || existing.text !== pending.source || existing.meta.name !== pending.name) throw new ConflictError()
-    return existing.meta
-  }
-}
-async function baseline(session:Session,remote:Remote, capability:'canEdit'|'canRename') {
-  requireAccount(session,remote)
-  const current = await metadata(session,remote.id)
-  if (current.version !== remote.version) throw new ConflictError()
-  if (!current.capabilities?.[capability]) throw new Error('The connected Google account lacks permission to change this file.')
-}
-export async function updateFile(session:Session,remote:Remote,text:string):Promise<Metadata> {
-  await baseline(session,remote,'canEdit')
-  const response = await request(session,'/upload'+filePath(remote.id)+'?uploadType=media&supportsAllDrives=true&fields='+fileFields,{
-    method:'PATCH',headers:{'Content-Type':'text/markdown; charset=UTF-8'},body:text
+
+export async function createFile(token: Token, name: string, text: string, folderId?: string): Promise<DriveFile> {
+  const boundary = `md-desk-${crypto.randomUUID()}`
+  const meta = { name: withMdExtension(name), mimeType: 'text/markdown', ...(folderId ? { parents: [folderId] } : {}) }
+  const body = [
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n`,
+    `--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n${text}\r\n`,
+    `--${boundary}--\r\n`,
+  ].join('')
+  const r = await call(token, `/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=${FIELDS}`, {
+    method: 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
   })
-  return response.json()
+  return r.json()
 }
-export async function renameFile(session:Session,remote:Remote,name:string):Promise<Metadata> {
-  await baseline(session,remote,'canRename')
-  const response = await request(session,filePath(remote.id)+'?supportsAllDrives=true&fields='+fileFields,{
-    method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})
+
+/** Overwrites file content. If expectedVersion is given and Drive has moved on, throws ConflictError. */
+export async function updateFile(token: Token, id: string, text: string, expectedVersion?: string): Promise<DriveFile> {
+  if (expectedVersion) {
+    const current = await getFile(token, id)
+    if (current.version !== expectedVersion) throw new ConflictError(current)
+    if (current.capabilities && current.capabilities.canEdit === false) throw new DriveError(403, 'You only have view access to this file. Use "Save a copy" instead.')
+  }
+  const r = await call(token, `/upload${filePath(id)}?uploadType=media&supportsAllDrives=true&fields=${FIELDS}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'text/markdown; charset=UTF-8' },
+    body: text,
   })
-  return response.json()
+  return r.json()
+}
+
+export async function renameFile(token: Token, id: string, name: string): Promise<DriveFile> {
+  const r = await call(token, `${filePath(id)}?supportsAllDrives=true&fields=${FIELDS}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: withMdExtension(name) }),
+  })
+  return r.json()
 }

@@ -1,96 +1,120 @@
-export const configuration = {
-  client: import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || '',
-  key: import.meta.env.VITE_GOOGLE_API_KEY?.trim() || '',
-  project: import.meta.env.VITE_GOOGLE_PROJECT_NUMBER?.trim() || '',
+// Google Identity Services (token model) + Google Picker, loaded on demand.
+export const config = {
+  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || '',
+  apiKey: import.meta.env.VITE_GOOGLE_API_KEY?.trim() || '',
+  projectNumber: import.meta.env.VITE_GOOGLE_PROJECT_NUMBER?.trim() || '',
 }
-export const configured = /\.apps\.googleusercontent\.com$/.test(configuration.client) && !!configuration.key && /^\d+$/.test(configuration.project)
-const scope = 'https://www.googleapis.com/auth/drive.file'
-interface TokenReply {access_token?: string; expires_in?: number; scope?: string; error?: string}
-interface TokenClient {requestAccessToken(options: {prompt:string}):void}
-interface Google {
-  accounts: {oauth2: {initTokenClient(options: {client_id:string; scope:string; include_granted_scopes:boolean; callback:(r:TokenReply)=>void; error_callback:(r:{type:string})=>void}):TokenClient}}
+export const driveConfigured =
+  /\.apps\.googleusercontent\.com$/.test(config.clientId) && !!config.apiKey && /^\d+$/.test(config.projectNumber)
+
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+
+export interface Token { token: string; expires: number }
+
+interface TokenReply { access_token?: string; expires_in?: number; scope?: string; error?: string }
+interface PickerView {
+  setMode(mode: string): PickerView
+  setIncludeFolders(v: boolean): PickerView
+  setSelectFolderEnabled(v: boolean): PickerView
+  setMimeTypes(v: string): PickerView
+  setParent?(id: string): PickerView
+}
+interface PickerBuilderT {
+  addView(v: unknown): PickerBuilderT
+  setOAuthToken(t: string): PickerBuilderT
+  setDeveloperKey(k: string): PickerBuilderT
+  setAppId(id: string): PickerBuilderT
+  setOrigin(o: string): PickerBuilderT
+  setTitle(t: string): PickerBuilderT
+  setCallback(cb: (r: { action: string; docs?: { id: string; name?: string }[] }) => void): PickerBuilderT
+  build(): { setVisible(v: boolean): void }
+}
+interface GoogleNS {
+  accounts: { oauth2: { initTokenClient(o: {
+    client_id: string; scope: string; include_granted_scopes: boolean
+    callback: (r: TokenReply) => void; error_callback: (e: { type: string }) => void
+  }): { requestAccessToken(o: { prompt: string }): void } } }
   picker: {
-    DocsView: new (id:string) => PickerDocsView
-    DocsViewMode:{LIST:string}
-    ViewId:{DOCS:string}
-    PickerBuilder: new () => PickerBuilder
+    DocsView: new (viewId?: string) => PickerView
+    DocsViewMode: { LIST: string; GRID: string }
+    ViewId: { DOCS: string; FOLDERS: string }
+    PickerBuilder: new () => PickerBuilderT
   }
 }
-interface PickerDocsView {
-  setMode(mode:string):this
-  setIncludeFolders(include:boolean):this
-  setSelectFolderEnabled(enabled:boolean):this
-}
-interface PickerBuilder {
-  addView(view:unknown):this
-  setOAuthToken(token:string):this
-  setDeveloperKey(key:string):this
-  setAppId(id:string):this
-  setOrigin(origin:string):this
-  setCallback(callback:(r:{action:string; docs?:{id:string}[]})=>void):this
-  build():{setVisible(visible:boolean):void}
-}
-const globals = window as Window & {google?:Google; gapi?:{load(name:string, callbacks:{callback:()=>void; onerror:()=>void; ontimeout:()=>void; timeout:number}):void}}
-const scripts = new Map<string,Promise<void>>()
-function script(url:string) {
-  const existing = scripts.get(url)
+type GapiT = { load(name: string, o: { callback: () => void; onerror: () => void; ontimeout: () => void; timeout: number }): void }
+const g = window as Window & { google?: GoogleNS; gapi?: GapiT }
+
+const loading = new Map<string, Promise<void>>()
+function loadScript(src: string) {
+  const existing = loading.get(src)
   if (existing) return existing
-  const loading = new Promise<void>((resolve,reject) => {
-    const node = document.createElement('script')
-    const fail = () => {clearTimeout(timer); node.remove(); reject(new Error('Google services could not load. Check your connection and retry.'))}
-    const timer = setTimeout(fail,12000)
-    node.onload = () => {clearTimeout(timer); resolve()}
-    node.onerror = fail
-    node.src = url
-    document.head.append(node)
-  }).catch(error => {scripts.delete(url); throw error})
-  scripts.set(url,loading)
-  return loading
+  const p = new Promise<void>((resolve, reject) => {
+    const el = document.createElement('script')
+    const fail = () => { clearTimeout(t); el.remove(); reject(new Error('Google services could not load. Check your connection and try again.')) }
+    const t = setTimeout(fail, 15000)
+    el.onload = () => { clearTimeout(t); resolve() }
+    el.onerror = fail
+    el.async = true
+    el.src = src
+    document.head.append(el)
+  }).catch(err => { loading.delete(src); throw err })
+  loading.set(src, p)
+  return p
 }
-export function prepareIdentity() {return script('https://accounts.google.com/gsi/client')}
-export interface Session {token:string; expires:number; account:string}
-export function requestToken():Promise<Omit<Session,'account'>> {
-  return new Promise((resolve,reject) => {
-    const identity = globals.google?.accounts?.oauth2
-    if (!identity) {
-      reject(new Error('Google authorization is still loading. Try Connect again.'))
-      return
-    }
-    const client = identity.initTokenClient({
-      client_id:configuration.client, scope, include_granted_scopes:false,
-      callback:reply => {
-        if (!reply.access_token || !reply.scope?.split(' ').includes(scope)) {
-          reject(new Error('Drive permission was declined or blocked. Check Google consent and Workspace restrictions.'))
+
+export const preloadIdentity = () => loadScript('https://accounts.google.com/gsi/client')
+
+export async function requestToken(prompt: '' | 'select_account' | 'consent' = 'select_account'): Promise<Token> {
+  await preloadIdentity()
+  const oauth = g.google?.accounts?.oauth2
+  if (!oauth) throw new Error('Google sign-in is still loading. Try again.')
+  return new Promise((resolve, reject) => {
+    const client = oauth.initTokenClient({
+      client_id: config.clientId,
+      scope: DRIVE_SCOPE,
+      include_granted_scopes: false,
+      callback: r => {
+        if (!r.access_token || !r.scope?.split(' ').includes(DRIVE_SCOPE)) {
+          reject(new Error('Google Drive permission was declined.'))
           return
         }
-        resolve({token:reply.access_token,expires:Date.now()+Number(reply.expires_in || 0)*1000})
+        resolve({ token: r.access_token, expires: Date.now() + Number(r.expires_in || 3600) * 1000 - 60_000 })
       },
-      error_callback:err => reject(new Error(err.type === 'popup_failed_to_open' ? 'Allow popups for this site and retry Connect.' : 'The authorization window was closed.'))
+      error_callback: e => reject(new Error(e.type === 'popup_failed_to_open'
+        ? 'The sign-in popup was blocked. Allow popups for this site and try again.'
+        : 'The sign-in window was closed.')),
     })
-    client.requestAccessToken({prompt:'select_account'})
+    client.requestAccessToken({ prompt })
   })
 }
-export async function pick(session:Session):Promise<string | undefined> {
-  if (session.expires <= Date.now()) throw new Error('Reconnect Google Drive to continue.')
-  await script('https://apis.google.com/js/api.js')
-  await new Promise<void>((resolve,reject) => {
-    const fail = () => reject(new Error('Picker could not load. Check API configuration and your connection.'))
-    if (!globals.gapi) return fail()
-    globals.gapi.load('picker',{callback:resolve,onerror:fail,ontimeout:fail,timeout:10000})
+
+export type PickMode = 'file' | 'folder'
+export interface Picked { id: string; name?: string }
+
+export async function openPicker(token: Token, mode: PickMode): Promise<Picked | undefined> {
+  await loadScript('https://apis.google.com/js/api.js')
+  await new Promise<void>((resolve, reject) => {
+    const fail = () => reject(new Error('Google Picker could not load. Check the API key and that the Picker API is enabled.'))
+    if (!g.gapi) return fail()
+    g.gapi.load('picker', { callback: resolve, onerror: fail, ontimeout: fail, timeout: 12000 })
   })
-  return new Promise((resolve) => {
-    const api = globals.google!.picker
-    const picker = new api.PickerBuilder()
-      .addView(new api.DocsView(api.ViewId.DOCS)
-        .setMode(api.DocsViewMode.LIST)
-        .setIncludeFolders(true)
-        .setSelectFolderEnabled(false))
-      .setAppId(configuration.project).setDeveloperKey(configuration.key)
-      .setOAuthToken(session.token).setOrigin(location.origin)
-      .setCallback(result => {
-        if (result.action === 'picked') resolve(result.docs?.[0]?.id)
-        if (result.action === 'cancel') resolve(undefined)
-      }).build()
-    picker.setVisible(true)
+  const api = g.google!.picker
+  const view = mode === 'folder'
+    ? new api.DocsView(api.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true).setMimeTypes('application/vnd.google-apps.folder')
+    : new api.DocsView(api.ViewId.DOCS).setMode(api.DocsViewMode.LIST).setIncludeFolders(true).setSelectFolderEnabled(false)
+  return new Promise(resolve => {
+    new api.PickerBuilder()
+      .addView(view)
+      .setTitle(mode === 'folder' ? 'Choose a folder to save in' : 'Open a Markdown file')
+      .setAppId(config.projectNumber)
+      .setDeveloperKey(config.apiKey)
+      .setOAuthToken(token.token)
+      .setOrigin(location.origin)
+      .setCallback(r => {
+        if (r.action === 'picked') resolve(r.docs?.[0] ? { id: r.docs[0].id, name: r.docs[0].name } : undefined)
+        else if (r.action === 'cancel') resolve(undefined)
+      })
+      .build()
+      .setVisible(true)
   })
 }
