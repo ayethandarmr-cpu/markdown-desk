@@ -93,7 +93,7 @@ export async function requestToken(prompt: '' | 'select_account' | 'consent' = '
 export type PickMode = 'file' | 'folder'
 export interface Picked { id: string; name?: string }
 
-export async function openPicker(token: Token, mode: PickMode): Promise<Picked | undefined> {
+export async function openPicker(token: Token, mode: PickMode, parentId?: string): Promise<Picked | undefined> {
   await loadScript('https://apis.google.com/js/api.js')
   await new Promise<void>((resolve, reject) => {
     const fail = () => reject(new Error('Google Picker could not load. Check the API key and that the Picker API is enabled.'))
@@ -104,6 +104,7 @@ export async function openPicker(token: Token, mode: PickMode): Promise<Picked |
   const view = mode === 'folder'
     ? new api.DocsView(api.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true).setMimeTypes('application/vnd.google-apps.folder')
     : new api.DocsView(api.ViewId.DOCS).setMode(api.DocsViewMode.LIST).setIncludeFolders(true).setSelectFolderEnabled(false)
+  if (parentId && view.setParent) view.setParent(parentId)
   return new Promise(resolve => {
     new api.PickerBuilder()
       .addView(view)

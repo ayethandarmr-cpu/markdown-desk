@@ -13,10 +13,11 @@ import { Modal } from './ui/controls'
 import { driveConfigured, preloadIdentity, requestToken, openPicker, type Token } from './google'
 import {
   whoAmI, readFile, createFile, updateFile, renameFile, listRecent, withMdExtension,
+  resolvePath, getFile, isMarkdownName, FOLDER_MIME,
   ConflictError, DriveError, type DriveFile, type DriveUser,
 } from './drive'
 import { setImageContext } from './editor/images'
-import { tidyMarkdown, fixLooseEmphasis, baseName, download, escapeHtml, loadState, saveState, defaultPrefs, type Prefs } from './util'
+import { tidyMarkdown, fixLooseEmphasis, slugify, baseName, download, escapeHtml, loadState, saveState, defaultPrefs, type Prefs } from './util'
 import { WELCOME } from './welcome'
 
 interface DocMeta {
@@ -219,6 +220,61 @@ export default function App() {
     } catch (e) { fail(e) }
   })
   const openRecent = (f: DriveFile) => guard(() => void openDriveFile(f.id))
+
+  // --- following links (Ctrl/Cmd+click, like Word) ---
+  const followLink = async (href: string) => {
+    if (!editor) return
+    if (href.startsWith('#')) {
+      const target = slugify(decodeURIComponent(href.slice(1)))
+      let found = -1
+      editor.state.doc.descendants((n, pos) => {
+        if (found < 0 && n.type.name === 'heading' && slugify(n.textContent) === target) found = pos
+        return found < 0
+      })
+      if (found < 0) { notify('That heading is not in this document.', 'error'); return }
+      ;(editor.view.nodeDOM(found) as HTMLElement | null)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    if (/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) { window.open(href, '_blank', 'noopener,noreferrer'); return }
+    const folderId = docRef.current.folderId
+    if (!folderId) { notify('Links to other files work when the document is opened from Google Drive.', 'error'); return }
+    try {
+      const t = await ensureToken()
+      const hit = await resolvePath(t, folderId, href)
+      if (!hit) { notify(`Could not find ${decodeURIComponent(href)} next to this document in Drive.`, 'error'); return }
+      if (hit.mimeType === FOLDER_MIME) {
+        const picked = await openPicker(t, 'file', hit.id)
+        if (picked) guard(() => void openDriveFile(picked.id))
+      } else if (hit.mimeType.startsWith('text/') || isMarkdownName(href.split(/[?#]/)[0])) {
+        guard(() => void openDriveFile(hit.id))
+      } else {
+        const f = await getFile(t, hit.id)
+        if (f.webViewLink) window.open(f.webViewLink, '_blank', 'noopener,noreferrer')
+      }
+    } catch (e) { fail(e) }
+  }
+  const followRef = useRef(followLink)
+  followRef.current = followLink
+  useEffect(() => {
+    const dom = editor?.view.dom
+    if (!dom) return
+    const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+    const linkAt = (e: Event) => (e.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+    const onClick = (e: MouseEvent) => {
+      const a = linkAt(e)
+      if (!a || !(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+      e.stopPropagation()
+      void followRef.current(a.getAttribute('href') || '')
+    }
+    const onOver = (e: MouseEvent) => {
+      const a = linkAt(e)
+      if (a && !a.title) a.title = `${a.getAttribute('href')}\n${isMac ? '⌘' : 'Ctrl'}+Click to follow link`
+    }
+    dom.addEventListener('click', onClick, true)
+    dom.addEventListener('mouseover', onOver)
+    return () => { dom.removeEventListener('click', onClick, true); dom.removeEventListener('mouseover', onOver) }
+  }, [editor])
   const openLocal = () => guard(() => fileInput.current?.click())
   const readLocalFile = async (file: File) => {
     try {
@@ -469,7 +525,10 @@ function LinkDialog({ editor, onClose }: { editor: Editor; onClose: () => void }
   const apply = () => {
     const href = url.trim()
     if (!href) { editor.chain().focus().extendMarkRange('link').unsetLink().run(); onClose(); return }
-    const full = /^(https?:|mailto:|#|\/)/i.test(href) ? href : `https://${href}`
+    // "example.com/page" gets https://, while paths to files beside the document ("02_Next.md", "./images/") stay relative.
+    const first = href.split(/[/?#]/)[0]
+    const looksLikeDomain = /\.[a-z]{2,}$/i.test(first) && !/\.(md|markdown|txt|png|jpe?g|gif|svg|webp|pdf)$/i.test(first)
+    const full = /^([a-z][a-z0-9+.-]*:|#|\/|\.)/i.test(href) || !looksLikeDomain ? href : `https://${href}`
     if (from === to && !existing) {
       editor.chain().focus().insertContent({ type: 'text', text: text || full, marks: [{ type: 'link', attrs: { href: full } }] }).run()
     } else {
@@ -485,7 +544,7 @@ function LinkDialog({ editor, onClose }: { editor: Editor; onClose: () => void }
     </>}>
       <form onSubmit={e => { e.preventDefault(); apply() }} className="form">
         {from === to && !existing && <label>Text to display<input value={text} onChange={e => setText(e.target.value)} /></label>}
-        <label>Address<input autoFocus value={url} placeholder="https://" onChange={e => setUrl(e.target.value)} /></label>
+        <label>Address<input autoFocus value={url} placeholder="https://… or 02_Chapter.md" onChange={e => setUrl(e.target.value)} /></label>
         <button type="submit" hidden />
       </form>
     </Modal>
