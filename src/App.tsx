@@ -533,7 +533,7 @@ function exportHtml(title: string, body: string) {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title>
 <style>
-body{font:16px/1.65 "Inter","Pyidaungsu","Myanmar Text","Noto Sans Myanmar",system-ui,sans-serif;max-width:780px;margin:40px auto;padding:0 20px;color:#1f2328}
+body{font:14px/1.65 "Inter","Pyidaungsu","Myanmar Text","Noto Sans Myanmar",system-ui,sans-serif;max-width:780px;margin:40px auto;padding:0 20px;color:#1f2328}
 h1,h2,h3,h4{line-height:1.3;margin:1.4em 0 .5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}
 pre{background:#f6f8fa;padding:14px;border-radius:8px;overflow:auto}code{font:.9em ui-monospace,Consolas,monospace;background:#f2f4f7;padding:.1em .35em;border-radius:4px}pre code{background:none;padding:0}
 blockquote{margin:1em 0;padding:.2em 1em;border-left:4px solid #c9d4e3;color:#57606a}table{border-collapse:collapse}th,td{border:1px solid #d0d7de;padding:6px 12px}th{background:#f6f8fa}
