@@ -100,3 +100,26 @@ test('Ctrl+click on a relative link opens the linked Drive file', async ({ page 
   await expect(editor.locator('h1')).toHaveText('Next chapter')
   await expect(page.getByTestId('doc-title')).toContainText('02_Next')
 })
+
+test('pins the document folder and opens a file from it later', async ({ page }) => {
+  await mockGoogle(page, [
+    { id: 'course', name: 'AI Basics', text: '', version: 1, mimeType: 'application/vnd.google-apps.folder' },
+    { id: 'f1', name: '01_Intro.md', text: '# Intro\n', version: 1, parents: ['course'] },
+  ], { file: 'f1' })
+  await page.reload()
+  await page.getByTestId('tab-file').click()
+  await page.getByTestId('open-drive').click()
+  await expect(page.getByTestId('editor').locator('h1')).toHaveText('Intro')
+  await page.getByTestId('tab-file').click()
+  await page.getByTestId('pin-current').click()
+  await expect(page.getByTestId('pins')).toContainText('AI Basics')
+  await expect(page.getByTestId('pin-current')).toHaveCount(0)
+  // Pins survive a reload and open the Picker in that folder.
+  await page.reload()
+  await page.getByTestId('tab-file').click()
+  await page.getByTestId('pins').getByRole('button', { name: 'AI Basics', exact: true }).click()
+  await expect(page.getByTestId('editor').locator('h1')).toHaveText('Intro')
+  await page.getByTestId('tab-file').click()
+  await page.getByRole('button', { name: 'Unpin AI Basics' }).click()
+  await expect(page.getByTestId('pins')).toHaveCount(0)
+})

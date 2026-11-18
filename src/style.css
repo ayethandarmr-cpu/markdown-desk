@@ -377,3 +377,16 @@ kbd { font: 11px var(--font); }
 .doc summary { font-weight: 600; list-style: none; outline: none; }
 .doc div[data-type="detailsContent"] { margin-top: 4px; }
 .doc div[data-type="detailsContent"] > :first-child { margin-top: 0; }
+
+/* Pinned folders */
+.bs-head-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+.bs-pins li { display: flex; align-items: center; }
+.bs-pins li > button:first-child { flex: 1; min-width: 0; }
+.bs-folder-icon { color: #e0a100; }
+.bs-unpin { opacity: 0; color: var(--text-2); }
+.bs-pins li:hover .bs-unpin, .bs-unpin:focus-visible { opacity: 1; }
+@media (hover: none) { .bs-unpin { opacity: 1; } }
+.bs-files .bs-unpin { display: grid; grid-template-columns: none; width: 32px; height: 32px; padding: 0; place-items: center; flex: none; }
+.bs-pins, .bs-pins + .bs-section-head, .bs-muted + .bs-section-head { margin-top: 0; }
+.bs-pins { margin-bottom: 28px; }
+.bs-pins-empty { margin-bottom: 28px; }
