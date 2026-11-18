@@ -178,6 +178,7 @@ kbd { font: 11px var(--font); }
 .doc hr.ProseMirror-selectednode { border-top-color: var(--accent); }
 .doc mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
 .doc img { max-width: 100%; height: auto; border-radius: 4px; }
+.doc img.img-loading, .doc img.img-missing { display: inline-block; min-width: 160px; min-height: 48px; background: var(--code-bg); border: 1px dashed var(--line-strong); }
 .doc img.ProseMirror-selectednode { outline: 3px solid var(--accent); }
 .doc table { border-collapse: collapse; margin: 1em 0; width: 100%; table-layout: fixed; overflow: hidden; }
 .doc th, .doc td { border: 1px solid var(--line-strong); padding: 6px 10px; vertical-align: top; position: relative; min-width: 40px; }

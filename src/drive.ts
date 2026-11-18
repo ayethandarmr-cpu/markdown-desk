@@ -24,7 +24,7 @@ export class ConflictError extends Error {
 
 const messages: Record<number, string> = {
   401: 'Your Google sign-in expired. Sign in again to continue.',
-  403: 'Google Drive denied access to this file.',
+  403: 'Google Drive denied access to this file. To edit it, open it once with File › Open from Google Drive.',
   404: 'The file was not found. It may have been deleted or moved to Trash.',
   429: 'Google Drive is busy. Try again in a moment.',
 }
@@ -129,4 +129,43 @@ export async function renameFile(token: Token, id: string, name: string): Promis
     body: JSON.stringify({ name: withMdExtension(name) }),
   })
   return r.json()
+}
+
+const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+
+/** Finds a child of a folder by exact name. Needs a scope that can see the folder (drive.readonly). */
+export async function findChild(token: Token, parentId: string, name: string, folder?: boolean): Promise<string | null> {
+  const clauses = [`${q(parentId)} in parents`, `name = ${q(name)}`, 'trashed = false']
+  if (folder) clauses.push("mimeType = 'application/vnd.google-apps.folder'")
+  const r = await call(token, `/drive/v3/files?q=${encodeURIComponent(clauses.join(' and '))}&pageSize=1&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`)
+  const { files } = await r.json()
+  return files?.[0]?.id ?? null
+}
+
+/**
+ * Resolves a relative path such as `images/a.png` or `../img/b.png` against a Drive folder
+ * and returns the file's bytes as a Blob, or null if it isn't there.
+ */
+export async function readRelative(token: Token, folderId: string, relPath: string): Promise<Blob | null> {
+  const parts = relPath.split(/[?#]/)[0].split('/').filter(p => p && p !== '.').map(p => { try { return decodeURIComponent(p) } catch { return p } })
+  if (!parts.length) return null
+  let dir = folderId
+  for (const [i, part] of parts.entries()) {
+    const last = i === parts.length - 1
+    if (part === '..') {
+      if (last) return null
+      const parent = (await getFile(token, dir)).parents?.[0]
+      if (!parent) return null
+      dir = parent
+      continue
+    }
+    const id = await findChild(token, dir, part, !last)
+    if (!id) return null
+    if (last) {
+      const r = await call(token, `${filePath(id)}?alt=media&supportsAllDrives=true`)
+      return r.blob()
+    }
+    dir = id
+  }
+  return null
 }

@@ -4,7 +4,7 @@ All of these steps happen in the same Google Cloud project: https://console.clou
 
 1. **Enable APIs.** Go to **APIs & Services › Library** and enable **Google Drive API** and **Google Picker API**.
 2. **Project number.** **IAM & Admin › Settings** (or the project dashboard) shows the numeric **Project number**. This becomes `VITE_GOOGLE_PROJECT_NUMBER`.
-3. **OAuth consent.** In **Google Auth Platform**, fill in **Branding** (app name, support email). Under **Audience**, choose External. While it's in *Testing*, add every Google account that will use the editor under **Test users**. Under **Data access**, add the scope `https://www.googleapis.com/auth/drive.file` only.
+3. **OAuth consent.** In **Google Auth Platform**, fill in **Branding** (app name, support email). Under **Audience**, choose External. While it's in *Testing*, add every Google account that will use the editor under **Test users**. Under **Data access**, add the scopes `https://www.googleapis.com/auth/drive.file` and `https://www.googleapis.com/auth/drive.readonly`.
 4. **OAuth client.** **Clients › Create client › Web application**. Under **Authorized JavaScript origins** add:
    - `https://md.cwslab.win`
    - `http://localhost:5173` and `http://127.0.0.1:5173` (for local development)
@@ -19,5 +19,6 @@ All of these steps happen in the same Google Cloud project: https://console.clou
 
 ## Notes
 
-- `drive.file` means the app only sees files you pick in the Picker or create with the app. It can't browse or change the rest of your Drive.
-- In *Testing* mode, Google asks users to sign in again about once a week, and only test users can sign in. To remove those limits, publish the app under **Audience › Publish app**. The `drive.file` scope doesn't require Google verification.
+- `drive.file` lets the app change only files you pick in the Picker or create with the app.
+- `drive.readonly` lets the app read (never change) the rest of your Drive. It uses this to show images that a Markdown file links with a relative path, such as `images/diagram.png` in a folder next to the file.
+- In *Testing* mode, Google asks users to sign in again about once a week, and only test users can sign in. To remove those limits, publish the app under **Audience › Publish app**. `drive.readonly` is a restricted scope, so a published app needs Google verification. While the app is in *Testing*, test users just see an "unverified app" notice and can continue.

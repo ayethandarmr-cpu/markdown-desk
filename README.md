@@ -53,4 +53,4 @@ See [Google Cloud setup](docs/google-cloud.md) and [Deploying to md.cwslab.win](
 
 ## Privacy
 
-The app uses Google's `drive.file` permission. It can only see files you open with it or create with it, not the rest of your Drive. The access token lives only in the open tab's memory. There is no server, analytics or tracking.
+The app changes only files you open or create with it (Google's `drive.file` permission). It also asks to read your Drive (`drive.readonly`) so it can show images that a Markdown file links with a relative path, like `images/diagram.png`. It never changes other files. The access token lives only in the open tab's memory. There is no server, analytics or tracking.

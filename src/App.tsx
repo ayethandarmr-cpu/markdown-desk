@@ -15,7 +15,8 @@ import {
   whoAmI, readFile, createFile, updateFile, renameFile, listRecent, withMdExtension,
   ConflictError, DriveError, type DriveFile, type DriveUser,
 } from './drive'
-import { tidyMarkdown, baseName, download, escapeHtml, loadState, saveState, defaultPrefs, type Prefs } from './util'
+import { setImageContext } from './editor/images'
+import { tidyMarkdown, fixLooseEmphasis, baseName, download, escapeHtml, loadState, saveState, defaultPrefs, type Prefs } from './util'
 import { WELCOME } from './welcome'
 
 interface DocMeta {
@@ -90,7 +91,7 @@ export default function App() {
     return editor ? tidyMarkdown(editor.getMarkdown()) : ''
   }, [editor])
   const loadIntoEditor = useCallback((md: string) => {
-    editor?.commands.setContent(md, { contentType: 'markdown', emitUpdate: false })
+    editor?.commands.setContent(fixLooseEmphasis(md), { contentType: 'markdown', emitUpdate: false })
     editor?.commands.setTextSelection(1)
     const tidy = editor ? tidyMarkdown(editor.getMarkdown()) : md
     setMarkdown(tidy)
@@ -105,6 +106,9 @@ export default function App() {
   useEffect(() => { if (editor && isFirstRun) setMarkdown(tidyMarkdown(editor.getMarkdown())) }, [editor])
 
   const dirty = markdown !== doc.savedText
+
+  // Relative images (e.g. images/a.png) load from the Drive folder that holds the document.
+  useEffect(() => { setImageContext({ folderId: doc.folderId, token: () => tokenRef.current }) }, [doc.folderId, token])
 
   // --- persistence ---
   useEffect(() => { saveState({ prefs }) }, [prefs])
@@ -200,6 +204,7 @@ export default function App() {
       const t = await ensureToken()
       setSaveStatus('saving')
       const { file, text } = await readFile(t, id)
+      setImageContext({ folderId: file.parents?.[0], token: () => tokenRef.current })
       const tidy = loadIntoEditor(text)
       setDoc({ name: file.name, driveId: file.id, version: file.version, folderId: file.parents?.[0], webViewLink: file.webViewLink, savedText: tidy })
       setBackstage(false)
@@ -220,6 +225,7 @@ export default function App() {
       const buf = await file.arrayBuffer()
       let text = new TextDecoder('utf-8', { fatal: true }).decode(buf)
       if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
+      setImageContext({ token: () => tokenRef.current })
       loadIntoEditor(text)
       setDoc({ name: withMdExtension(file.name), savedText: '' })
       notify(`Opened ${file.name} from this device. Save to put it in Google Drive.`, 'ok')
