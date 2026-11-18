@@ -134,38 +134,46 @@ export async function renameFile(token: Token, id: string, name: string): Promis
 const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 
 /** Finds a child of a folder by exact name. Needs a scope that can see the folder (drive.readonly). */
-export async function findChild(token: Token, parentId: string, name: string, folder?: boolean): Promise<string | null> {
+export async function findChild(token: Token, parentId: string, name: string, folder?: boolean): Promise<{ id: string; mimeType: string } | null> {
   const clauses = [`${q(parentId)} in parents`, `name = ${q(name)}`, 'trashed = false']
   if (folder) clauses.push("mimeType = 'application/vnd.google-apps.folder'")
-  const r = await call(token, `/drive/v3/files?q=${encodeURIComponent(clauses.join(' and '))}&pageSize=1&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`)
+  const r = await call(token, `/drive/v3/files?q=${encodeURIComponent(clauses.join(' and '))}&pageSize=1&fields=files(id,mimeType)&supportsAllDrives=true&includeItemsFromAllDrives=true`)
   const { files } = await r.json()
-  return files?.[0]?.id ?? null
+  return files?.[0] ?? null
 }
 
+export const FOLDER_MIME = 'application/vnd.google-apps.folder'
+
 /**
- * Resolves a relative path such as `images/a.png` or `../img/b.png` against a Drive folder
- * and returns the file's bytes as a Blob, or null if it isn't there.
+ * Resolves a relative path such as `images/a.png`, `../b.md` or `./Chapter/` against a Drive folder.
+ * Returns the item's id and type, or null if it isn't there.
  */
-export async function readRelative(token: Token, folderId: string, relPath: string): Promise<Blob | null> {
+export async function resolvePath(token: Token, folderId: string, relPath: string): Promise<{ id: string; mimeType: string } | null> {
+  const wantFolder = /\/$/.test(relPath.split(/[?#]/)[0])
   const parts = relPath.split(/[?#]/)[0].split('/').filter(p => p && p !== '.').map(p => { try { return decodeURIComponent(p) } catch { return p } })
-  if (!parts.length) return null
   let dir = folderId
+  if (!parts.length) return { id: dir, mimeType: FOLDER_MIME }
   for (const [i, part] of parts.entries()) {
     const last = i === parts.length - 1
     if (part === '..') {
-      if (last) return null
       const parent = (await getFile(token, dir)).parents?.[0]
       if (!parent) return null
       dir = parent
+      if (last) return { id: dir, mimeType: FOLDER_MIME }
       continue
     }
-    const id = await findChild(token, dir, part, !last)
-    if (!id) return null
-    if (last) {
-      const r = await call(token, `${filePath(id)}?alt=media&supportsAllDrives=true`)
-      return r.blob()
-    }
-    dir = id
+    const hit = await findChild(token, dir, part, !last || wantFolder)
+    if (!hit) return null
+    if (last) return hit
+    dir = hit.id
   }
   return null
+}
+
+/** Reads a file next to the document (see resolvePath) as a Blob, or null if it isn't there. */
+export async function readRelative(token: Token, folderId: string, relPath: string): Promise<Blob | null> {
+  const hit = await resolvePath(token, folderId, relPath)
+  if (!hit || hit.mimeType === FOLDER_MIME) return null
+  const r = await call(token, `${filePath(hit.id)}?alt=media&supportsAllDrives=true`)
+  return r.blob()
 }

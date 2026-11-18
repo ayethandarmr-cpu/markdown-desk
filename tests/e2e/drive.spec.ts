@@ -81,3 +81,22 @@ test('shows images from the folder next to the document and repairs loose bold',
   expect(store.get('f1')!.text).toContain('](images/Diagram_001.png)')
   expect(store.get('f1')!.text).toContain('**Backup and replication:** Virtual')
 })
+
+test('Ctrl+click on a relative link opens the linked Drive file', async ({ page }) => {
+  await mockGoogle(page, [
+    { id: 'idx', name: 'README.md', text: '# Track 1\n\n- [Page 2: Next chapter](Fundamentals/02_Next.md)\n', version: 1, parents: ['course'] },
+    { id: 'dir', name: 'Fundamentals', text: '', version: 1, parents: ['course'], mimeType: 'application/vnd.google-apps.folder' },
+    { id: 'p2', name: '02_Next.md', text: '# Next chapter\n\nBody\n', version: 1, parents: ['dir'] },
+  ], { file: 'idx' })
+  await page.reload()
+  await page.getByTestId('tab-file').click()
+  await page.getByTestId('open-drive').click()
+  const editor = page.getByTestId('editor')
+  await expect(editor.locator('h1')).toHaveText('Track 1')
+  // A plain click only places the cursor, like Word.
+  await editor.getByRole('link', { name: /Page 2/ }).click()
+  await expect(editor.locator('h1')).toHaveText('Track 1')
+  await editor.getByRole('link', { name: /Page 2/ }).click({ modifiers: ['ControlOrMeta'] })
+  await expect(editor.locator('h1')).toHaveText('Next chapter')
+  await expect(page.getByTestId('doc-title')).toContainText('02_Next')
+})

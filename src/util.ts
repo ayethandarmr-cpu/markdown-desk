@@ -45,6 +45,11 @@ export function fixLooseEmphasis(md: string): string {
   }).join('\n')
 }
 
+/** GitHub-style heading anchor: lower-case, punctuation removed, spaces to dashes. Keeps Myanmar letters. */
+export function slugify(text: string): string {
+  return text.trim().toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, '').replace(/\s/g, '-')
+}
+
 /** Word-ish counting: Latin words by whitespace; Myanmar runs counted by syllable clusters is overkill, so count whitespace-separated runs. */
 export function countWords(text: string): number {
   const m = text.trim().match(/\S+/gu)
