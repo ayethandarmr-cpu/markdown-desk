@@ -18,9 +18,15 @@ async function mockGoogle(page:Page) {
     body:`window.gapi = {load:(_name,handlers) => handlers.callback()};
       window.google.picker = {
         ViewId:{DOCS:'docs'}, DocsViewMode:{LIST:'list'},
-        DocsView:class {setMode(){return this}},
+        DocsView:class {
+          setMode(){return this} setIncludeFolders(value){this.includeFolders=value;return this}
+          setSelectFolderEnabled(value){this.selectFolders=value;return this}
+        },
         PickerBuilder:class {
-          addView(){return this} setAppId(){return this} setDeveloperKey(){return this}
+          addView(view){
+            if (!view.includeFolders || view.selectFolders !== false) throw new Error('Picker must browse folders and select files')
+            return this
+          } setAppId(){return this} setDeveloperKey(){return this}
           setOAuthToken(){return this} setOrigin(){return this} setCallback(cb){this.cb=cb;return this}
           build(){return {setVisible:() => this.cb({action:'picked',docs:[{id:'chosen'}]})}}
         }
