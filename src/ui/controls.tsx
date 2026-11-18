@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { X } from 'lucide-react'
 
@@ -37,7 +37,22 @@ export function Group(p: { label: string; children: ReactNode }) {
 
 export function Popover(p: { trigger: (open: () => void, isOpen: boolean) => ReactNode; children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const pop = useRef<HTMLDivElement>(null)
+  // The ribbon scrolls sideways (overflow hidden), so the menu is placed with fixed positioning to escape it.
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return }
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect()
+      if (!r) return
+      const w = pop.current?.offsetWidth ?? 240
+      setPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) })
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [open])
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
@@ -49,7 +64,7 @@ export function Popover(p: { trigger: (open: () => void, isOpen: boolean) => Rea
   return (
     <div className="popover-anchor" ref={ref}>
       {p.trigger(() => setOpen(o => !o), open)}
-      {open && <div className="popover" role="dialog">{p.children(() => setOpen(false))}</div>}
+      {open && <div ref={pop} className="popover" role="dialog" style={pos ? { position: 'fixed', top: pos.top, left: pos.left } : { visibility: 'hidden' }}>{p.children(() => setOpen(false))}</div>}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import {
   Table2, Image, Link2, SquareCode, Minus, CalendarClock, FileText, Globe, FileCode2, PanelLeft,
   ZoomIn, ZoomOut, Scan, Moon, Sun, Monitor, Maximize2, BetweenHorizontalStart, BetweenHorizontalEnd,
   BetweenVerticalStart, BetweenVerticalEnd, Rows3, Columns3, Trash2, Heading, SpellCheck, Unlink,
+  Baseline, ChevronDown, ListCollapse,
 } from 'lucide-react'
 import { RBtn, Group, Popover } from './controls'
 import type { Prefs } from '../util'
@@ -49,6 +50,8 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
       canSink: e.can().sinkListItem('listItem') || e.can().sinkListItem('taskItem'),
       canLift: e.can().liftListItem('listItem') || e.can().liftListItem('taskItem'),
       lang: (e.getAttributes('codeBlock').language as string | null) ?? '',
+      color: (e.getAttributes('textStyle').color as string | undefined) ?? '',
+      toggle: e.isActive('details'),
     }),
   })
   const c = () => editor.chain().focus()
@@ -60,6 +63,7 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
     else if (id === 'quote') { if (!s.quote) c().setParagraph().setBlockquote().run() }
     else if (id === 'code') { if (!s.codeBlock) c().setCodeBlock().run() }
   }
+  const toggleDetails = () => { if (s.toggle) c().unsetDetails().run(); else c().setDetails().updateAttributes('details', { open: true }).run() }
   const { prefs, setPrefs } = a
   const tabs: [Tab, string][] = [['home', 'Home'], ['insert', 'Insert'], ['view', 'View']]
   if (s.table) tabs.push(['table', 'Table'])
@@ -89,6 +93,7 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
               <RBtn icon={Strikethrough} label="Strikethrough" active={s.strike} onClick={() => c().toggleStrike().run()} />
               <RBtn icon={Code} label="Inline code" shortcut="Ctrl+E" active={s.code} onClick={() => c().toggleCode().run()} />
               <RBtn icon={Highlighter} label="Highlight" shortcut="Ctrl+Shift+H" active={s.highlight} onClick={() => c().toggleHighlight().run()} />
+              <ColorPicker editor={editor} current={s.color} />
               <RBtn icon={RemoveFormatting} label="Clear formatting" onClick={() => c().unsetAllMarks().clearNodes().run()} />
             </div>
           </Group>
@@ -103,6 +108,7 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
                 onClick={() => { if (!c().sinkListItem('listItem').run()) c().sinkListItem('taskItem').run() }} />
               <RBtn icon={Quote} label="Quote" active={s.quote} onClick={() => c().toggleBlockquote().run()} />
               <RBtn icon={Minus} label="Horizontal line" onClick={() => c().setHorizontalRule().run()} />
+              <RBtn icon={ListCollapse} label="Toggle (collapsible section)" active={s.toggle} onClick={() => toggleDetails()} testId="btn-toggle" />
             </div>
           </Group>
           <Group label="Styles">
@@ -139,6 +145,7 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
           <Group label="Blocks">
             <RBtn icon={SquareCode} label="Code block" big active={s.codeBlock} onClick={() => c().toggleCodeBlock().run()} />
             <RBtn icon={ListChecks} label="Checklist" big active={s.task} onClick={() => c().toggleTaskList().run()} />
+            <RBtn icon={ListCollapse} label="Toggle" big active={s.toggle} onClick={() => toggleDetails()} />
             <RBtn icon={Minus} label="Line" big onClick={() => c().setHorizontalRule().run()} />
             <RBtn icon={Heading} label="Heading" big onClick={() => c().setHeading({ level: 2 }).run()} />
           </Group>
@@ -220,6 +227,51 @@ function TablePicker({ onPick }: { onPick: (rows: number, cols: number) => void 
                 onClick={() => { onPick(r + 1, col + 1); close() }} />
             )))}
           </div>
+        </div>
+      )}
+    </Popover>
+  )
+}
+
+const COLORS: [string, string][] = [
+  ['#000000', 'Black'], ['#7f7f7f', 'Gray'], ['#c00000', 'Dark red'], ['#e03131', 'Red'], ['#f08c00', 'Orange'],
+  ['#e6b800', 'Gold'], ['#2f9e44', 'Green'], ['#0b7285', 'Teal'], ['#1a5fd0', 'Blue'], ['#1c3d7a', 'Navy'],
+  ['#7048e8', 'Purple'], ['#c2255c', 'Pink'],
+]
+
+function ColorPicker({ editor, current }: { editor: Editor; current: string }) {
+  const [last, setLast] = useState('#c00000')
+  const apply = (color: string | null) => {
+    const ch = editor.chain().focus()
+    if (color) { ch.setColor(color).run(); setLast(color) } else ch.unsetColor().removeEmptyTextStyle().run()
+  }
+  return (
+    <Popover trigger={(toggle, open) => (
+      <span className="split-btn">
+        <button type="button" className="rbtn color-btn" title="Font color" aria-label="Font color"
+          onMouseDown={e => e.preventDefault()} onClick={() => apply(last)} data-testid="btn-color">
+          <Baseline size={16} strokeWidth={1.75} />
+          <span className="color-bar" style={{ background: last }} />
+        </button>
+        <button type="button" className={`rbtn split-arrow${open ? ' is-active' : ''}`} aria-label="More font colors"
+          onMouseDown={e => e.preventDefault()} onClick={toggle} data-testid="btn-color-menu"><ChevronDown size={12} /></button>
+      </span>
+    )}>
+      {close => (
+        <div className="color-menu">
+          <button type="button" className="color-auto" onMouseDown={e => e.preventDefault()} onClick={() => { apply(null); close() }}>
+            <span className="swatch" style={{ background: 'var(--text)' }} /> Automatic
+          </button>
+          <div className="color-grid">
+            {COLORS.map(([hex, name]) => (
+              <button type="button" key={hex} title={name} aria-label={name} className={`swatch${current === hex ? ' is-active' : ''}`}
+                style={{ background: hex }} onMouseDown={e => e.preventDefault()} onClick={() => { apply(hex); close() }} />
+            ))}
+          </div>
+          <label className="color-custom">
+            More colors…
+            <input type="color" value={current || last} onChange={e => apply(e.target.value)} />
+          </label>
         </div>
       )}
     </Popover>
