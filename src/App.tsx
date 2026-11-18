@@ -44,7 +44,7 @@ const isFirstRun = !initial.draft
 const narrow = typeof window !== 'undefined' && window.innerWidth < 900
 
 export default function App() {
-  const [prefs, setPrefsState] = useState<Prefs>({ ...defaultPrefs, ...initial.prefs, ...(narrow ? { nav: false } : {}) })
+  const [prefs, setPrefsState] = useState<Prefs>({ ...defaultPrefs, ...initial.prefs, ...(narrow ? { nav: false, ribbon: initial.prefs?.ribbon ?? false } : {}) })
   const setPrefs = useCallback((p: Partial<Prefs>) => setPrefsState(cur => ({ ...cur, ...p })), [])
   const [doc, setDocState] = useState<DocMeta>(initialDoc)
   const docRef = useRef(doc)
@@ -407,6 +407,7 @@ export default function App() {
       else if (k === 'k') { e.preventDefault(); if (prefs.view !== 'source') setDialog({ kind: 'link' }) }
       else if (k === 'p') { e.preventDefault(); print() }
       else if (e.altKey && k === 'n') { e.preventDefault(); newDoc() }
+      else if (k === 'f1') { e.preventDefault(); setPrefs({ ribbon: !prefs.ribbon }) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

@@ -99,8 +99,10 @@ export interface Prefs {
   zoom: number
   autosave: boolean
   spellcheck: boolean
+  /** Show the ribbon's buttons (false = only the tab names, like Word's collapsed ribbon). */
+  ribbon: boolean
 }
-export const defaultPrefs: Prefs = { theme: 'system', view: 'print', nav: true, zoom: 100, autosave: true, spellcheck: false }
+export const defaultPrefs: Prefs = { theme: 'system', view: 'print', nav: true, zoom: 100, autosave: true, spellcheck: false, ribbon: true }
 
 export function loadState(): Persisted {
   try { return JSON.parse(localStorage.getItem(KEY) || '{}') } catch { return {} }
