@@ -19,6 +19,32 @@ export function tidyMarkdown(md: string): string {
   return out.join('\n').replace(/^\n+/, '').replace(/\n*$/, '\n')
 }
 
+/**
+ * Repairs bold markers that strict Markdown ignores because of inner spaces,
+ * e.g. `**Label: **Text` → `**Label:** Text`. Code fences and inline code are left alone.
+ */
+export function fixLooseEmphasis(md: string): string {
+  const fixSpan = (text: string) => text.replace(/(\*\*|__)([^*_\n]*?)\1/g, (all, mark: string, inner: string, offset: number, whole: string) => {
+    const core = inner.trim()
+    if (!core || core === inner) return all
+    const before = /\s$|^$/.test(whole.slice(0, offset)) ? '' : (/^\s/.test(inner) ? ' ' : '')
+    const nextCh = whole.charAt(offset + all.length)
+    const after = /\s$/.test(inner) && nextCh && !/[\s.,;:!?)]/.test(nextCh) ? ' ' : ''
+    return `${before}${mark}${core}${mark}${after}`
+  })
+  const fixLine = (line: string) => line.split(/(`+[^`]*?`+)/).map((part, i) => (i % 2 ? part : fixSpan(part))).join('')
+  let fence: string | null = null
+  return md.split('\n').map(line => {
+    const m = /^\s*(`{3,}|~{3,})/.exec(line)
+    if (m) {
+      if (!fence) fence = m[1][0]
+      else if (m[1][0] === fence) fence = null
+      return line
+    }
+    return fence ? line : fixLine(line)
+  }).join('\n')
+}
+
 /** Word-ish counting: Latin words by whitespace; Myanmar runs counted by syllable clusters is overkill, so count whitespace-separated runs. */
 export function countWords(text: string): number {
   const m = text.trim().match(/\S+/gu)

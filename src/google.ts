@@ -8,6 +8,8 @@ export const driveConfigured =
   /\.apps\.googleusercontent\.com$/.test(config.clientId) && !!config.apiKey && /^\d+$/.test(config.projectNumber)
 
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+/** Lets the app read images that sit next to a Markdown file (e.g. an images/ folder). Writing still uses drive.file. */
+export const DRIVE_READ_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
 
 export interface Token { token: string; expires: number }
 
@@ -71,7 +73,7 @@ export async function requestToken(prompt: '' | 'select_account' | 'consent' = '
   return new Promise((resolve, reject) => {
     const client = oauth.initTokenClient({
       client_id: config.clientId,
-      scope: DRIVE_SCOPE,
+      scope: `${DRIVE_SCOPE} ${DRIVE_READ_SCOPE}`,
       include_granted_scopes: false,
       callback: r => {
         if (!r.access_token || !r.scope?.split(' ').includes(DRIVE_SCOPE)) {

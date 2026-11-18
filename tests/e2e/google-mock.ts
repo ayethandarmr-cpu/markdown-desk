@@ -1,13 +1,13 @@
 import type { Page } from '@playwright/test'
 
-export interface MockFile { id: string; name: string; text: string; version: number; parents?: string[] }
+export interface MockFile { id: string; name: string; text: string; version: number; parents?: string[]; mimeType?: string; base64?: string }
 
 /** Replaces Google Identity, Picker and Drive REST with an in-memory fake. */
 export async function mockGoogle(page: Page, files: MockFile[], pick: { file?: string; folder?: string } = {}) {
   const store = new Map(files.map(f => [f.id, { ...f }]))
   let next = 1
   const meta = (f: MockFile) => ({
-    id: f.id, name: f.name, mimeType: 'text/markdown', version: String(f.version), modifiedTime: new Date().toISOString(),
+    id: f.id, name: f.name, mimeType: f.mimeType ?? 'text/markdown', version: String(f.version), modifiedTime: new Date().toISOString(),
     parents: f.parents ?? ['root'], webViewLink: `https://drive.google.com/file/d/${f.id}/view`, capabilities: { canEdit: true, canRename: true },
   })
   await page.route('https://accounts.google.com/gsi/client', r => r.fulfill({ contentType: 'text/javascript', body: `
@@ -28,7 +28,15 @@ export async function mockGoogle(page: Page, files: MockFile[], pick: { file?: s
     const url = new URL(req.url())
     const json = (body: unknown, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (url.pathname === '/drive/v3/about') return json({ user: { displayName: 'Test User', emailAddress: 'test@example.com', permissionId: 'p1' } })
-    if (url.pathname === '/drive/v3/files' && req.method() === 'GET') return json({ files: [...store.values()].map(meta) })
+    if (url.pathname === '/drive/v3/files' && req.method() === 'GET') {
+      const q = url.searchParams.get('q') || ''
+      const parent = /'([^']+)' in parents/.exec(q)?.[1]
+      const name = /name = '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1')
+      const wantFolder = q.includes("mimeType = 'application/vnd.google-apps.folder'")
+      const hits = [...store.values()].filter(f => (!parent || (f.parents ?? ['root']).includes(parent)) && (name === undefined || f.name === name)
+        && (!wantFolder || f.mimeType === 'application/vnd.google-apps.folder'))
+      return json({ files: hits.map(meta) })
+    }
     if (url.pathname === '/upload/drive/v3/files' && req.method() === 'POST') {
       const body = req.postData() || ''
       const parts = body.split(/--md-desk-[^\r\n]+/)
@@ -50,7 +58,10 @@ export async function mockGoogle(page: Page, files: MockFile[], pick: { file?: s
       const f = store.get(decodeURIComponent(one[1]))
       if (!f) return json({ error: 'not found' }, 404)
       if (req.method() === 'PATCH') { Object.assign(f, JSON.parse(req.postData() || '{}')); f.version++; return json(meta(f)) }
-      if (url.searchParams.get('alt') === 'media') return r.fulfill({ status: 200, contentType: 'text/markdown', body: f.text })
+      if (url.searchParams.get('alt') === 'media') {
+        if (f.base64) return r.fulfill({ status: 200, contentType: f.mimeType, body: Buffer.from(f.base64, 'base64') })
+        return r.fulfill({ status: 200, contentType: 'text/markdown', body: f.text })
+      }
       return json(meta(f))
     }
     return json({ error: 'unhandled ' + url.pathname }, 500)

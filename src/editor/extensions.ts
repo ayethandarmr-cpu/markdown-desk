@@ -3,7 +3,7 @@ import { Markdown } from '@tiptap/markdown'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
 import Highlight from '@tiptap/extension-highlight'
-import Image from '@tiptap/extension-image'
+import { DriveImage } from './images'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { CharacterCount, Placeholder } from '@tiptap/extensions'
 import Typography from '@tiptap/extension-typography'
@@ -24,7 +24,7 @@ export function buildExtensions() {
     TableRow, TableHeader, TableCell,
     TaskList, TaskItem.configure({ nested: true }),
     Highlight,
-    Image.configure({ allowBase64: false }),
+    DriveImage.configure({ allowBase64: false }),
     Typography,
     CharacterCount,
     Placeholder.configure({ placeholder: 'Start writing…' }),

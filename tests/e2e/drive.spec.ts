@@ -55,3 +55,29 @@ test('warns about a conflict when Drive changed elsewhere', async ({ page }) => 
   await expect(page.getByTestId('doc-title')).toContainText('Saved to Drive')
   expect(store.get('f1')!.text).toContain('local')
 })
+
+test('shows images from the folder next to the document and repairs loose bold', async ({ page }) => {
+  // 1×1 red PNG
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+  const store = await mockGoogle(page, [
+    { id: 'f1', name: 'Lesson.md', text: '# Lesson\n\n- **Backup and replication: **Virtual environments\n\n![Diagram](images/Diagram_001.png)\n', version: 1, parents: ['course'] },
+    { id: 'imgdir', name: 'images', text: '', version: 1, parents: ['course'], mimeType: 'application/vnd.google-apps.folder' },
+    { id: 'img1', name: 'Diagram_001.png', text: '', version: 1, parents: ['imgdir'], mimeType: 'image/png', base64: png },
+  ], { file: 'f1' })
+  await page.reload()
+  await page.getByTestId('tab-file').click()
+  await page.getByTestId('open-drive').click()
+  const editor = page.getByTestId('editor')
+  await expect(editor.locator('h1')).toHaveText('Lesson')
+  await expect(editor.locator('strong')).toHaveText('Backup and replication:')
+  const img = editor.locator('img[alt="Diagram"]')
+  await expect(img).toHaveAttribute('src', /^blob:/)
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1)
+  // Saving keeps the original relative path, not the temporary blob URL.
+  await editor.locator('h1').click()
+  await page.keyboard.press('End')
+  await page.keyboard.type('!')
+  await expect.poll(() => store.get('f1')!.text, { timeout: 8000 }).toContain('Lesson!')
+  expect(store.get('f1')!.text).toContain('](images/Diagram_001.png)')
+  expect(store.get('f1')!.text).toContain('**Backup and replication:** Virtual')
+})
