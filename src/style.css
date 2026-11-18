@@ -100,6 +100,9 @@ kbd { font: 11px var(--font); }
 .tab-file:hover { background: var(--accent-strong); color: #fff; }
 :root[data-theme="dark"] .tab-file { color: #0f1520; }
 .tab-contextual { color: #8a4ad6; }
+.ribbon-tabs-spacer { flex: 1; }
+.ribbon-toggle { position: sticky; right: 0; flex: none; align-self: center; display: grid; place-items: center; width: 30px; height: 28px; margin: 0 0 4px; border: 0; border-radius: 6px; background: var(--chrome); color: var(--text-2); }
+.ribbon-toggle:hover { background: var(--hover); color: var(--text); }
 .tab-contextual.is-active { color: #8a4ad6; }
 .tab-contextual.is-active::after { background: #8a4ad6; }
 .ribbon-body { display: flex; align-items: stretch; gap: 0; padding: 6px 10px 4px; height: 104px; overflow-x: auto; overflow-y: hidden; background: var(--chrome-2); border-top: 1px solid var(--line); scrollbar-width: thin; }

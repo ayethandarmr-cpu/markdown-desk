@@ -92,3 +92,27 @@ test('colours text and adds a toggle section that collapses', async ({ page }) =
   await expect(page.getByTestId('source')).toHaveValue(
     '<span style="color: #e03131">Red words</span>\n\n<details open>\n<summary>Answer</summary>\n\nHidden detail\n\n</details>\n')
 })
+
+test('hides and shows the toolbar', async ({ page }) => {
+  await expect(page.getByTestId('ribbon-body')).toBeVisible()
+  await page.getByTestId('ribbon-toggle').click()
+  await expect(page.getByTestId('ribbon-body')).toHaveCount(0)
+  // Clicking a tab brings the toolbar back, like Word.
+  await page.getByRole('tab', { name: 'Insert' }).click()
+  await expect(page.getByTestId('ribbon-body')).toBeVisible()
+  await page.keyboard.press('Control+F1')
+  await expect(page.getByTestId('ribbon-body')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByTestId('ribbon-body')).toHaveCount(0)
+})
+
+test('starts with the toolbar folded on a phone', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const page = await ctx.newPage()
+  await page.goto('/')
+  await expect(page.getByTestId('editor')).toBeVisible()
+  await expect(page.getByTestId('ribbon-body')).toHaveCount(0)
+  await page.getByTestId('ribbon-toggle').click()
+  await expect(page.getByTestId('ribbon-body')).toBeVisible()
+  await ctx.close()
+})

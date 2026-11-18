@@ -6,7 +6,7 @@ import {
   Table2, Image, Link2, SquareCode, Minus, CalendarClock, FileText, Globe, FileCode2, PanelLeft,
   ZoomIn, ZoomOut, Scan, Moon, Sun, Monitor, Maximize2, BetweenHorizontalStart, BetweenHorizontalEnd,
   BetweenVerticalStart, BetweenVerticalEnd, Rows3, Columns3, Trash2, Heading, SpellCheck, Unlink,
-  Baseline, ChevronDown, ListCollapse,
+  Baseline, ChevronDown, ChevronUp, ListCollapse,
 } from 'lucide-react'
 import { RBtn, Group, Popover } from './controls'
 import type { Prefs } from '../util'
@@ -76,10 +76,17 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
         {tabs.map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={shown === id}
             className={`tab${shown === id ? ' is-active' : ''}${id === 'table' ? ' tab-contextual' : ''}`}
-            onClick={() => setTab(id)}>{label}</button>
+            onClick={() => { setTab(id); if (!prefs.ribbon) setPrefs({ ribbon: true }) }}
+            onDoubleClick={() => setPrefs({ ribbon: !prefs.ribbon })}>{label}</button>
         ))}
+        <span className="ribbon-tabs-spacer" />
+        <button type="button" className="ribbon-toggle" onClick={() => setPrefs({ ribbon: !prefs.ribbon })}
+          aria-expanded={prefs.ribbon} aria-label={prefs.ribbon ? 'Hide toolbar' : 'Show toolbar'} data-testid="ribbon-toggle"
+          title={prefs.ribbon ? 'Hide toolbar (Ctrl+F1)' : 'Show toolbar (Ctrl+F1)'}>
+          {prefs.ribbon ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
       </div>
-      <div className="ribbon-body" role="tabpanel">
+      {prefs.ribbon && <div className="ribbon-body" role="tabpanel" data-testid="ribbon-body">
         {shown === 'home' && <>
           <Group label="Undo">
             <RBtn icon={Undo2} label="Undo" shortcut="Ctrl+Z" disabled={!s.canUndo} onClick={() => c().undo().run()} />
@@ -163,6 +170,9 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
         </>}
 
         {shown === 'view' && <>
+          <Group label="Toolbar">
+            <RBtn icon={ChevronUp} label="Hide toolbar" big shortcut="Ctrl+F1" onClick={() => setPrefs({ ribbon: false })} />
+          </Group>
           <Group label="Views">
             <RBtn icon={FileText} label="Print Layout" big active={prefs.view === 'print'} onClick={() => setPrefs({ view: 'print' })} testId="view-print" />
             <RBtn icon={Globe} label="Web Layout" big active={prefs.view === 'web'} onClick={() => setPrefs({ view: 'web' })} />
@@ -206,7 +216,7 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
             <RBtn icon={Table2} label="Header row" big onClick={() => c().toggleHeaderRow().run()} />
           </Group>
         </>}
-      </div>
+      </div>}
     </div>
   )
 }
