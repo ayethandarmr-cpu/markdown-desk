@@ -17,7 +17,7 @@ import {
   ConflictError, DriveError, type DriveFile, type DriveUser,
 } from './drive'
 import { setImageContext } from './editor/images'
-import { tidyMarkdown, fixLooseEmphasis, slugify, baseName, download, escapeHtml, loadState, saveState, defaultPrefs, type Prefs } from './util'
+import { tidyMarkdown, fixLooseEmphasis, slugify, baseName, download, escapeHtml, loadState, saveState, defaultPrefs, type Prefs, type PinnedFolder } from './util'
 import { WELCOME } from './welcome'
 
 interface DocMeta {
@@ -55,6 +55,8 @@ export default function App() {
   const [sourceText, setSourceText] = useState(initialMarkdown)
   const [tab, setTab] = useState<Tab>('home')
   const [backstage, setBackstage] = useState(false)
+  const [pins, setPinsState] = useState<PinnedFolder[]>(initial.pins ?? [])
+  const setPins = (next: PinnedFolder[]) => { setPinsState(next); saveState({ pins: next }) }
   const [find, setFind] = useState<{ replace: boolean } | null>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [toast, setToast] = useState<{ text: string; tone?: 'error' | 'ok'; action?: { label: string; run: () => void } } | null>(null)
@@ -220,6 +222,38 @@ export default function App() {
     } catch (e) { fail(e) }
   })
   const openRecent = (f: DriveFile) => guard(() => void openDriveFile(f.id))
+
+  // --- pinned folders: one click opens the Picker inside a favourite folder ---
+  const addPin = (pin: PinnedFolder) => {
+    if (pins.some(x => x.id === pin.id)) { notify(`“${pin.name}” is already pinned.`); return }
+    setPins([...pins, pin])
+    notify(`Pinned “${pin.name}”`, 'ok')
+  }
+  const pinCurrentFolder = async () => {
+    const id = docRef.current.folderId
+    if (!id) return
+    try {
+      const t = await ensureToken()
+      const f = await getFile(t, id)
+      addPin({ id, name: f.name || 'My Drive' })
+    } catch (e) { fail(e) }
+  }
+  const pinPickedFolder = async () => {
+    try {
+      const t = await ensureToken()
+      const picked = await openPicker(t, 'folder')
+      if (!picked) return
+      const name = picked.name || (await getFile(t, picked.id)).name
+      addPin({ id: picked.id, name })
+    } catch (e) { fail(e) }
+  }
+  const openPinned = async (pin: PinnedFolder) => {
+    try {
+      const t = await ensureToken()
+      const picked = await openPicker(t, 'file', pin.id)
+      if (picked) guard(() => void openDriveFile(picked.id))
+    } catch (e) { fail(e) }
+  }
 
   // --- following links (Ctrl/Cmd+click, like Word) ---
   const followLink = async (href: string) => {
@@ -479,7 +513,10 @@ export default function App() {
           onNew={newDoc} onOpenDrive={openFromDrive} onOpenRecent={openRecent} onOpenLocal={openLocal}
           onSave={() => void save()} onSaveCopy={choose => void save({ copy: !!doc.driveId, chooseFolder: choose })}
           onRename={() => setDialog({ kind: 'rename' })} onDownloadMd={downloadMd} onDownloadHtml={downloadHtml} onPrint={print}
-          onSignIn={signIn} onSignOut={signOut} />
+          onSignIn={signIn} onSignOut={signOut}
+          pins={pins} canPinCurrent={!!doc.folderId && !pins.some(x => x.id === doc.folderId)}
+          onOpenPinned={pin => void openPinned(pin)} onPinCurrent={() => void pinCurrentFolder()} onPinPick={() => void pinPickedFolder()}
+          onUnpin={pin => setPins(pins.filter(x => x.id !== pin.id))} />
       )}
 
       {dialog?.kind === 'link' && <LinkDialog editor={editor} onClose={() => { setDialog(null); editor.commands.focus() }} />}

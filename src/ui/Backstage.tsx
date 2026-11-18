@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowLeft, FilePlus2, FolderOpen, Save, CopyPlus, PencilLine, Download, Printer, UserRound,
-  FileText, RefreshCw, HardDrive, Upload, ExternalLink, LogOut,
+  FileText, RefreshCw, HardDrive, Upload, ExternalLink, LogOut, Folder, Pin, PinOff, FolderPlus,
 } from 'lucide-react'
 import type { DriveFile, DriveUser } from '../drive'
-import { relativeTime } from '../util'
+import { relativeTime, type PinnedFolder } from '../util'
 
 type Pane = 'home' | 'save' | 'export' | 'account'
 
@@ -30,6 +30,12 @@ export interface BackstageProps {
   onPrint: () => void
   onSignIn: () => void
   onSignOut: () => void
+  pins: PinnedFolder[]
+  canPinCurrent: boolean
+  onOpenPinned: (pin: PinnedFolder) => void
+  onPinCurrent: () => void
+  onPinPick: () => void
+  onUnpin: (pin: PinnedFolder) => void
 }
 
 export function Backstage(p: BackstageProps) {
@@ -73,6 +79,28 @@ export function Backstage(p: BackstageProps) {
               <div className="bs-thumb"><Upload size={28} /></div><span>Open from this device</span>
             </button>
           </div>
+          {p.driveReady && <>
+            <div className="bs-section-head">
+              <h2>Pinned folders</h2>
+              <span className="bs-head-actions">
+                {p.canPinCurrent && <button type="button" className="link-btn" onClick={p.onPinCurrent} data-testid="pin-current"><Pin size={14} /> Pin this document's folder</button>}
+                <button type="button" className="link-btn" onClick={p.onPinPick} data-testid="pin-pick"><FolderPlus size={14} /> Pin a folder…</button>
+              </span>
+            </div>
+            {p.pins.length ? (
+              <ul className="bs-files bs-pins" data-testid="pins">
+                {p.pins.map(pin => (
+                  <li key={pin.id}>
+                    <button type="button" onClick={() => p.onOpenPinned(pin)} title={`Open a file in ${pin.name}`}>
+                      <Folder size={18} className="bs-file-icon bs-folder-icon" />
+                      <span className="bs-file-name">{pin.name}</span>
+                    </button>
+                    <button type="button" className="icon-btn bs-unpin" onClick={() => p.onUnpin(pin)} title="Unpin" aria-label={`Unpin ${pin.name}`}><PinOff size={15} /></button>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="bs-muted bs-pins-empty">Pin the folders you use most, then open them here with one click.</p>}
+          </>}
           <div className="bs-section-head">
             <h2>Recent in Google Drive</h2>
             {p.user && <button type="button" className="link-btn" onClick={p.refreshRecent}><RefreshCw size={14} /> Refresh</button>}
@@ -138,7 +166,7 @@ export function Backstage(p: BackstageProps) {
           {p.driveLinked && p.webViewLink && (
             <p><a href={p.webViewLink} target="_blank" rel="noopener noreferrer" className="link-btn">Open “{p.docName}” in Google Drive <ExternalLink size={14} /></a></p>
           )}
-          <p className="bs-muted">This app only sees Drive files you open or create with it (Google's <code>drive.file</code> permission). Your access token stays in this tab's memory.</p>
+          <p className="bs-muted">This app can read your Drive so it can show images and follow links next to a document, and it changes only files you open or create with it. Your access token stays in this tab's memory.</p>
         </>}
       </main>
     </div>

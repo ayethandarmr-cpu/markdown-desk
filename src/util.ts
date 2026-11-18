@@ -89,7 +89,9 @@ const KEY = 'markdown-desk:v2'
 export interface Persisted {
   draft?: { markdown: string; name: string; driveId?: string; version?: string; savedText?: string; folderId?: string }
   prefs?: Partial<Prefs>
+  pins?: PinnedFolder[]
 }
+export interface PinnedFolder { id: string; name: string }
 export interface Prefs {
   theme: 'system' | 'light' | 'dark'
   view: 'print' | 'web' | 'source'
