@@ -9,6 +9,7 @@ import { CharacterCount, Placeholder } from '@tiptap/extensions'
 import Typography from '@tiptap/extension-typography'
 import { createLowlight, common } from 'lowlight'
 import { Search } from './search'
+import { ColoredText, Color, Toggle, DetailsSummary, DetailsContent } from './htmlBlocks'
 
 const lowlight = createLowlight(common)
 
@@ -24,6 +25,8 @@ export function buildExtensions() {
     TableRow, TableHeader, TableCell,
     TaskList, TaskItem.configure({ nested: true }),
     Highlight,
+    ColoredText, Color,
+    Toggle, DetailsSummary, DetailsContent,
     DriveImage.configure({ allowBase64: false }),
     Typography,
     CharacterCount,
