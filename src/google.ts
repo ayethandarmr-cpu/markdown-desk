@@ -10,11 +10,16 @@ interface TokenClient {requestAccessToken(options: {prompt:string}):void}
 interface Google {
   accounts: {oauth2: {initTokenClient(options: {client_id:string; scope:string; include_granted_scopes:boolean; callback:(r:TokenReply)=>void; error_callback:(r:{type:string})=>void}):TokenClient}}
   picker: {
-    DocsView: new (id:string) => {setMode(mode:string):unknown}
+    DocsView: new (id:string) => PickerDocsView
     DocsViewMode:{LIST:string}
     ViewId:{DOCS:string}
     PickerBuilder: new () => PickerBuilder
   }
+}
+interface PickerDocsView {
+  setMode(mode:string):this
+  setIncludeFolders(include:boolean):this
+  setSelectFolderEnabled(enabled:boolean):this
 }
 interface PickerBuilder {
   addView(view:unknown):this
@@ -76,7 +81,10 @@ export async function pick(session:Session):Promise<string | undefined> {
   return new Promise((resolve) => {
     const api = globals.google!.picker
     const picker = new api.PickerBuilder()
-      .addView(new api.DocsView(api.ViewId.DOCS).setMode(api.DocsViewMode.LIST))
+      .addView(new api.DocsView(api.ViewId.DOCS)
+        .setMode(api.DocsViewMode.LIST)
+        .setIncludeFolders(true)
+        .setSelectFolderEnabled(false))
       .setAppId(configuration.project).setDeveloperKey(configuration.key)
       .setOAuthToken(session.token).setOrigin(location.origin)
       .setCallback(result => {
