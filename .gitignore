@@ -6,3 +6,4 @@ dist-mock/
 test-results/
 playwright-report/
 *.local
+dist-e2e/

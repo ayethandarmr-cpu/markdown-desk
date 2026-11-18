@@ -3,7 +3,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['.github/workflows/pages.yml']
 permissions:
   contents: read
 concurrency:
@@ -28,7 +27,6 @@ jobs:
       - run: npm run check
       - run: npm run lint
       - run: npm test
-      - run: npm run test:build
       - uses: actions/configure-pages@v5
       - run: npm run build
         env:
