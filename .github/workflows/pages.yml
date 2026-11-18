@@ -1,6 +1,9 @@
 name: Deploy to GitHub Pages
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pages.yml']
 permissions:
   contents: read
 concurrency:
@@ -29,7 +32,7 @@ jobs:
       - uses: actions/configure-pages@v5
       - run: npm run build
         env:
-          VITE_BASE: ${{ vars.VITE_BASE || '/markdown-desk/' }}
+          VITE_BASE: ${{ vars.VITE_BASE || '/' }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
           VITE_GOOGLE_PROJECT_NUMBER: ${{ vars.VITE_GOOGLE_PROJECT_NUMBER }}
