@@ -15,7 +15,7 @@ All of these steps happen in the same Google Cloud project: https://console.clou
    - *API restrictions*: **Restrict key** and select **Google Picker API**.
 
    This key becomes `VITE_GOOGLE_API_KEY`.
-6. Put the three values in GitHub repository variables (see [deployment.md](deployment.md)) and redeploy.
+6. Put the three values in the Cloudflare Workers Builds variables (see [deployment.md](deployment.md)) and redeploy.
 
 ## Notes
 

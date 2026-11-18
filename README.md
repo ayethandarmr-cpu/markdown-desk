@@ -1,6 +1,6 @@
 # Markdown Desk
 
-A Word-style Markdown editor that opens and saves `.md` files in your Google Drive. It runs entirely in the browser, is hosted on GitHub Pages, and is served at **https://md.cwslab.win** through Cloudflare DNS.
+A Word-style Markdown editor that opens and saves `.md` files in your Google Drive. It runs entirely in the browser and is served at **https://md.cwslab.win** by a Cloudflare Worker that deploys automatically from this repository.
 
 ## Features
 
@@ -40,7 +40,7 @@ npm run test:e2e   # browser tests (Playwright), with Google mocked
 
 ## Configuration
 
-These are build-time values. They are visible to visitors, which is expected for browser OAuth. Set them as **repository variables** under GitHub › Settings › Secrets and variables › Actions › Variables.
+These are build-time values. They are visible to visitors, which is expected for browser OAuth. Set them as **build variables** in Cloudflare (Workers & Pages › markdown-desk › Settings › Build › Variables and secrets), or in `.env.local` for local development.
 
 | Variable | Value |
 | --- | --- |
@@ -49,7 +49,7 @@ These are build-time values. They are visible to visitors, which is expected for
 | `VITE_GOOGLE_PROJECT_NUMBER` | Numeric Google Cloud project number |
 | `VITE_BASE` | `/` (custom domain) |
 
-See [Google Cloud setup](docs/google-cloud.md) and [Deploying to md.cwslab.win](docs/deployment.md).
+See [Google Cloud setup](docs/google-cloud.md) and [Deploying to md.cwslab.win](docs/deployment.md) (Cloudflare Workers).
 
 ## Privacy
 
