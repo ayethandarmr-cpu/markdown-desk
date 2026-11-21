@@ -3,7 +3,7 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import {
   Save, Undo2, Redo2, Search, Cloud, CloudOff, CloudUpload, Check, AlertCircle, Loader2, Bold, Italic,
-  Underline, Strikethrough, Code, Highlighter, Link2, NotebookPen,
+  Underline, Strikethrough, Code, Highlighter, Link2, NotebookPen, PencilLine,
 } from 'lucide-react'
 import { buildExtensions } from './editor/extensions'
 import { Ribbon, type Tab } from './ui/Ribbon'
@@ -17,6 +17,7 @@ import {
   ConflictError, DriveError, type DriveFile, type DriveUser,
 } from './drive'
 import { setImageContext } from './editor/images'
+import { suggestReplace, resolveAll, changesForAI } from './editor/suggest'
 import { tidyMarkdown, fixLooseEmphasis, slugify, baseName, download, escapeHtml, loadState, saveState, defaultPrefs, type Prefs, type PinnedFolder } from './util'
 import { WELCOME } from './welcome'
 
@@ -222,6 +223,35 @@ export default function App() {
     } catch (e) { fail(e) }
   })
   const openRecent = (f: DriveFile) => guard(() => void openDriveFile(f.id))
+
+  // --- suggested edits (track changes) ---
+  const [suggest, setSuggest] = useState<{ from: number; to: number; text: string } | null>(null)
+  const startSuggest = () => {
+    if (!editor) return
+    const { from, to, empty } = editor.state.selection
+    if (empty) { notify('Select the text you want to change first.'); return }
+    setSuggest({ from, to, text: editor.state.doc.textBetween(from, to, '\n') })
+  }
+  const applySuggest = (text: string) => {
+    if (!editor || !suggest) return
+    editor.commands.setTextSelection({ from: suggest.from, to: suggest.to })
+    suggestReplace(editor, text)
+    setSuggest(null)
+    editor.commands.focus()
+  }
+  const acceptReject = (accept: boolean) => {
+    if (!editor) return
+    const n = resolveAll(editor, accept)
+    notify(n ? `${accept ? 'Accepted' : 'Rejected'} ${n} change${n === 1 ? '' : 's'}` : 'There are no suggested changes.', n ? 'ok' : undefined)
+  }
+  const copyChangesForAI = async () => {
+    const md = currentMarkdown()
+    if (!/<(del|ins)>/.test(md)) { notify('There are no suggested changes to copy.'); return }
+    try {
+      await navigator.clipboard.writeText(changesForAI(md, doc.name))
+      notify('Copied the changed paragraphs. Paste them into your AI chat.', 'ok')
+    } catch { notify('Could not copy to the clipboard.', 'error') }
+  }
 
   // --- pinned folders: one click opens the Picker inside a favourite folder ---
   const addPin = (pin: PinnedFolder) => {
@@ -472,7 +502,7 @@ export default function App() {
       </header>
 
       <Ribbon editor={editor} tab={tab} setTab={setTab} onFile={() => setBackstage(true)}
-        a={{ openFile: () => setBackstage(true), find: replace => setFind({ replace }), link: () => setDialog({ kind: 'link' }), image: () => setDialog({ kind: 'image' }), prefs, setPrefs }} />
+        a={{ suggest: startSuggest, acceptAll: () => acceptReject(true), rejectAll: () => acceptReject(false), copyForAI: () => void copyChangesForAI(), openFile: () => setBackstage(true), find: replace => setFind({ replace }), link: () => setDialog({ kind: 'link' }), image: () => setDialog({ kind: 'image' }), prefs, setPrefs }} />
 
       <div className="workspace">
         {prefs.nav && prefs.view !== 'source' && <NavPane editor={editor} onClose={() => setPrefs({ nav: false })} />}
@@ -491,7 +521,10 @@ export default function App() {
         </main>
       </div>
 
-      <BubbleMenu editor={editor} className="bubble" shouldShow={({ editor: e, from, to }) => from !== to && !e.isActive('codeBlock') && !e.isActive('image')}>
+      <BubbleMenu editor={editor} className="bubble" shouldShow={({ editor: e, from, to }) => !!suggest || (from !== to && !e.isActive('codeBlock') && !e.isActive('image'))}>
+        {suggest ? <SuggestBox initial={suggest.text} onUpdate={applySuggest} onCancel={() => { setSuggest(null); editor.commands.focus() }} /> : <>
+        <button type="button" onClick={startSuggest} className="bubble-suggest" title="Suggest an edit (old text is struck through, new text shows in orange)" data-testid="btn-suggest"><PencilLine size={15} /><span>Suggest edit</span></button>
+        <span className="bubble-sep" />
         <button type="button" onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'is-active' : ''} title="Bold"><Bold size={15} /></button>
         <button type="button" onClick={() => editor.chain().focus().toggleItalic().run()} className={editor.isActive('italic') ? 'is-active' : ''} title="Italic"><Italic size={15} /></button>
         <button type="button" onClick={() => editor.chain().focus().toggleUnderline().run()} className={editor.isActive('underline') ? 'is-active' : ''} title="Underline"><Underline size={15} /></button>
@@ -500,6 +533,7 @@ export default function App() {
         <button type="button" onClick={() => editor.chain().focus().toggleHighlight().run()} className={editor.isActive('highlight') ? 'is-active' : ''} title="Highlight"><Highlighter size={15} /></button>
         <span className="bubble-sep" />
         <button type="button" onClick={() => setDialog({ kind: 'link' })} className={editor.isActive('link') ? 'is-active' : ''} title="Link"><Link2 size={15} /></button>
+        </>}
       </BubbleMenu>
 
       <StatusBar editor={editor} sourceText={sourceText} prefs={prefs} setPrefs={setPrefs} driveLabel={driveLabel} />
@@ -550,6 +584,29 @@ export default function App() {
           <button type="button" className="icon-btn" aria-label="Dismiss" onClick={() => setToast(null)}>×</button>
         </div>
       )}
+    </div>
+  )
+}
+
+function SuggestBox({ initial, onUpdate, onCancel }: { initial: string; onUpdate: (text: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState(initial)
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { ref.current?.focus(); ref.current?.select() }, [])
+  return (
+    <div className="suggest-box" data-testid="suggest-box">
+      <div className="suggest-old" title="Selected text (Shift+Enter adds a new line)">{initial}</div>
+      <textarea ref={ref} value={text} rows={Math.min(6, Math.max(2, text.split('\n').length))} aria-label="New text"
+        placeholder="Type the new text (leave empty to suggest deleting)"
+        onChange={e => setText(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onUpdate(text) }
+          if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+        }} />
+      <div className="suggest-actions">
+        <span className="suggest-hint">Enter = Update</span>
+        <button type="button" className="btn btn-sm" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => onUpdate(text)} data-testid="suggest-update">Update</button>
+      </div>
     </div>
   )
 }

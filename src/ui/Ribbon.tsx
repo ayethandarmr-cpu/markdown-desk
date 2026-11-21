@@ -6,14 +6,19 @@ import {
   Table2, Image, Link2, SquareCode, Minus, CalendarClock, FileText, Globe, FileCode2, PanelLeft,
   ZoomIn, ZoomOut, Scan, Moon, Sun, Monitor, Maximize2, BetweenHorizontalStart, BetweenHorizontalEnd,
   BetweenVerticalStart, BetweenVerticalEnd, Rows3, Columns3, Trash2, Heading, SpellCheck, Unlink,
-  Baseline, ChevronDown, ChevronUp, ListCollapse,
+  Baseline, ChevronDown, ChevronUp, ListCollapse, PencilLine, CheckCheck, X as XIcon, ClipboardCopy,
 } from 'lucide-react'
 import { RBtn, Group, Popover } from './controls'
 import type { Prefs } from '../util'
+import { countSuggestions } from '../editor/suggest'
 
-export type Tab = 'home' | 'insert' | 'view' | 'table'
+export type Tab = 'home' | 'insert' | 'review' | 'view' | 'table'
 
 export interface RibbonActions {
+  suggest: () => void
+  acceptAll: () => void
+  rejectAll: () => void
+  copyForAI: () => void
   openFile: () => void
   find: (replace: boolean) => void
   link: () => void
@@ -52,6 +57,8 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
       lang: (e.getAttributes('codeBlock').language as string | null) ?? '',
       color: (e.getAttributes('textStyle').color as string | undefined) ?? '',
       toggle: e.isActive('details'),
+      changes: countSuggestions(e.state.doc),
+      hasSel: !e.state.selection.empty,
     }),
   })
   const c = () => editor.chain().focus()
@@ -65,7 +72,7 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
   }
   const toggleDetails = () => { if (s.toggle) c().unsetDetails().run(); else c().setDetails().updateAttributes('details', { open: true }).run() }
   const { prefs, setPrefs } = a
-  const tabs: [Tab, string][] = [['home', 'Home'], ['insert', 'Insert'], ['view', 'View']]
+  const tabs: [Tab, string][] = [['home', 'Home'], ['insert', 'Insert'], ['review', 'Review'], ['view', 'View']]
   if (s.table) tabs.push(['table', 'Table'])
   const shown = tab === 'table' && !s.table ? 'home' : tab
 
@@ -167,6 +174,19 @@ export function Ribbon({ editor, tab, setTab, onFile, a }: {
               </select>
             </Group>
           )}
+        </>}
+
+        {shown === 'review' && <>
+          <Group label="Suggest">
+            <RBtn icon={PencilLine} label="Suggest edit" big disabled={!s.hasSel} onClick={a.suggest} testId="ribbon-suggest" />
+          </Group>
+          <Group label={`Changes (${s.changes})`}>
+            <RBtn icon={CheckCheck} label="Accept all" big disabled={!s.changes} onClick={a.acceptAll} testId="accept-all" />
+            <RBtn icon={XIcon} label="Reject all" big disabled={!s.changes} onClick={a.rejectAll} testId="reject-all" />
+          </Group>
+          <Group label="AI check">
+            <RBtn icon={ClipboardCopy} label="Copy for AI" big disabled={!s.changes} onClick={a.copyForAI} testId="copy-ai" />
+          </Group>
         </>}
 
         {shown === 'view' && <>
