@@ -123,3 +123,17 @@ test('pins the document folder and opens a file from it later', async ({ page })
   await page.getByRole('button', { name: 'Unpin AI Basics' }).click()
   await expect(page.getByTestId('pins')).toHaveCount(0)
 })
+
+test('stays signed in after the page is refreshed', async ({ page }) => {
+  await mockGoogle(page, [{ id: 'f1', name: 'Notes.md', text: '# Notes\n\nbody\n', version: 1 }], { file: 'f1' })
+  await page.reload()
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.locator('.avatar')).toBeVisible()
+  await page.reload()
+  await expect(page.locator('.avatar')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in' })).toHaveCount(0)
+  // A file opens straight away, with no new sign-in.
+  await page.getByTestId('tab-file').click()
+  await page.getByTestId('open-drive').click()
+  await expect(page.getByTestId('editor').locator('h1')).toHaveText('Notes')
+})
