@@ -61,10 +61,21 @@ export default function App() {
   const [find, setFind] = useState<{ replace: boolean } | null>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [toast, setToast] = useState<{ text: string; tone?: 'error' | 'ok'; action?: { label: string; run: () => void } } | null>(null)
-  const [token, setTokenState] = useState<Token | null>(null)
-  const tokenRef = useRef<Token | null>(null)
-  const setToken = (t: Token | null) => { tokenRef.current = t; setTokenState(t) }
-  const [user, setUser] = useState<DriveUser>()
+  // Sign-in survives a page refresh: a still-valid token is reused, and a known account
+  // gets a new token without the account chooser.
+  const savedToken = initial.auth?.token && initial.auth.token.expires > Date.now() ? initial.auth.token : null
+  const [token, setTokenState] = useState<Token | null>(savedToken)
+  const tokenRef = useRef<Token | null>(savedToken)
+  const [user, setUserState] = useState<DriveUser | undefined>(initial.auth?.user)
+  const userRef = useRef<DriveUser | undefined>(initial.auth?.user)
+  const setToken = (t: Token | null) => {
+    tokenRef.current = t; setTokenState(t)
+    saveState({ auth: userRef.current ? { user: userRef.current, token: t ?? undefined } : null })
+  }
+  const setUser = (u: DriveUser | undefined) => {
+    userRef.current = u; setUserState(u)
+    saveState({ auth: u ? { user: u, token: tokenRef.current ?? undefined } : null })
+  }
   const [recent, setRecent] = useState<DriveFile[]>()
   const [loadingRecent, setLoadingRecent] = useState(false)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
@@ -173,10 +184,10 @@ export default function App() {
     const cur = tokenRef.current
     if (cur && cur.expires > Date.now() && !force) return cur
     if (!driveConfigured) throw new Error('Google Drive is not configured for this site.')
-    const t = await requestToken(user ? '' : 'select_account')
+    const t = await requestToken(user ? '' : 'select_account', user?.emailAddress)
     const me = await whoAmI(t)
-    setToken(t)
     setUser(me)
+    setToken(t)
     return t
   }, [user])
   const refreshRecent = useCallback(async () => {
@@ -189,7 +200,7 @@ export default function App() {
   const signIn = async () => {
     try { await ensureToken(true); notify('Signed in to Google Drive', 'ok'); void refreshRecent() } catch (e) { fail(e) }
   }
-  const signOut = () => { setToken(null); setUser(undefined); setRecent(undefined); notify('Signed out') }
+  const signOut = () => { setUser(undefined); setToken(null); setRecent(undefined); notify('Signed out') }
 
   // --- guard for replacing the current doc ---
   const guard = (then: () => void) => {

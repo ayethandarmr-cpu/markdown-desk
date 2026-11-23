@@ -90,6 +90,8 @@ export interface Persisted {
   draft?: { markdown: string; name: string; driveId?: string; version?: string; savedText?: string; folderId?: string }
   prefs?: Partial<Prefs>
   pins?: PinnedFolder[]
+  /** Google sign-in kept across page reloads: the access token (until it expires) and who signed in. */
+  auth?: { token?: { token: string; expires: number }; user?: { displayName: string; emailAddress: string; photoLink?: string; permissionId: string } } | null
 }
 export interface PinnedFolder { id: string; name: string }
 export interface Prefs {

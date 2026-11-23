@@ -33,7 +33,7 @@ interface PickerBuilderT {
 }
 interface GoogleNS {
   accounts: { oauth2: { initTokenClient(o: {
-    client_id: string; scope: string; include_granted_scopes: boolean
+    client_id: string; scope: string; include_granted_scopes: boolean; login_hint?: string
     callback: (r: TokenReply) => void; error_callback: (e: { type: string }) => void
   }): { requestAccessToken(o: { prompt: string }): void } } }
   picker: {
@@ -66,7 +66,7 @@ function loadScript(src: string) {
 
 export const preloadIdentity = () => loadScript('https://accounts.google.com/gsi/client')
 
-export async function requestToken(prompt: '' | 'select_account' | 'consent' = 'select_account'): Promise<Token> {
+export async function requestToken(prompt: '' | 'select_account' | 'consent' = 'select_account', loginHint?: string): Promise<Token> {
   await preloadIdentity()
   const oauth = g.google?.accounts?.oauth2
   if (!oauth) throw new Error('Google sign-in is still loading. Try again.')
@@ -75,6 +75,7 @@ export async function requestToken(prompt: '' | 'select_account' | 'consent' = '
       client_id: config.clientId,
       scope: `${DRIVE_SCOPE} ${DRIVE_READ_SCOPE}`,
       include_granted_scopes: false,
+      ...(loginHint ? { login_hint: loginHint } : {}),
       callback: r => {
         if (!r.access_token || !r.scope?.split(' ').includes(DRIVE_SCOPE)) {
           reject(new Error('Google Drive permission was declined.'))
